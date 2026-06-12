@@ -47,6 +47,9 @@
 
 # Or install globally:
 ❯❯❯ npm install -g straightforward
+# Build for windows
+❯❯❯ npm run build     
+❯❯❯ npx pkg . --targets node18-win-x64 --output dist/straightforward.exe
 ```
 
 ## Usage (cli)
