@@ -95,16 +95,16 @@ export class Straightforward extends EventEmitter {
     })
   }
 
-  public async cluster(port: number, count: number = numCPUs) {
+  public async cluster(port: number, count: number = numCPUs, host?: string) {
     if (cluster.isWorker) {
-      return this.listen(port)
+      return this.listen(port, host)
     }
     for (let i = 0; i < count; i++) {
       cluster.fork()
     }
   }
 
-  public async listen(port: number = 9191) {
+  public async listen(port: number = 9191, host?: string) {
     this.server.on("request", this._onRequest.bind(this))
     this.server.on("connect", this._onConnect.bind(this))
     this.server.on("error", this._onServerError.bind(this))
@@ -113,9 +113,9 @@ export class Straightforward extends EventEmitter {
     process.on("uncaughtException", this._onUncaughtException.bind(this))
 
     return new Promise((resolve) =>
-      this.server.listen(port, () => {
-        debug("listen: \t %o", { port, pid: process.pid })
-        this.emit("listen", port, process.pid, this.server)
+      this.server.listen(port, host, () => {
+        debug("listen: \t %o", { port, host, pid: process.pid })
+        this.emit("listen", port, process.pid, this.server, host)
         resolve(this)
       })
     )

@@ -13,6 +13,10 @@ const argv = yargs
     describe: `Port to bind on`,
     type: "number",
   })
+  .option("host", {
+    describe: `Host/interface to bind on`,
+    type: "string",
+  })
   .option("auth", {
     alias: "a",
     describe: `Enable proxy authentication`,
@@ -68,9 +72,9 @@ async function cli() {
   const sf = new Straightforward()
 
   if (!argv.silent) {
-    sf.on("listen", (port) => {
+    sf.on("listen", (port, _pid, _server, host) => {
       console.log(`
-      straightforward forward-proxy running on localhost:${port}
+      straightforward forward-proxy running on ${host || "localhost"}:${port}
       `)
     })
     sf.on("serverError", (err) => console.error("An error occured.", err))
@@ -102,8 +106,8 @@ async function cli() {
     })
   }
   argv.cluster
-    ? await sf.cluster(argv.port, argv.clusterCount)
-    : await sf.listen(argv.port)
+    ? await sf.cluster(argv.port, argv.clusterCount, argv.host)
+    : await sf.listen(argv.port, argv.host)
 }
 
 cli()

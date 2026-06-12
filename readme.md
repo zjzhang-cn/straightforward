@@ -59,6 +59,7 @@ Usage: straightforward --port 9191 [options]
 Options:
       --version        Show version number                             [boolean]
   -p, --port           Port to bind on                  [number] [default: 9191]
+      --host           Host/interface to bind on                        [string]
   -a, --auth           Enable proxy authentication                      [string]
   -e, --echo           Enable echo mode (mock all http responses)      [boolean]
   -d, --debug          Enabled debug output                            [boolean]
