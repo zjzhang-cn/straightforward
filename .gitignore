@@ -24,3 +24,5 @@ yarn-error.log*
 
 TODO.md
 testing/
+rules.local.json
+*.local.json
