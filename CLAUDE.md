@@ -105,13 +105,13 @@ Stress test: `node --expose-gc -r esbuild-register test/stress.ts` (60s, 64 conc
 
 ## Node.js SEA (standalone executable)
 
-`sea-config.json` defines the SEA build. The output is `dist/straightforward` — a self-contained ~131MB binary that runs without Node.js installed.
+`sea-config.json` defines the SEA build. The output is `dist/straightforward` — a self-contained ~126MB binary that runs without Node.js installed.
 
-**Important:** `--build-sea` requires a statically-linked Node.js binary. Homebrew's Node is dynamically linked (68KB stub + libnode.dylib) and won't work. Download from [nodejs.org](https://nodejs.org) or use nvm (`nvm install 25` fetches static binaries).
+系统已安装静态链接的 Node.js v25.9.0（`~/.local/node-v25.9.0/`），`npm run build:sea` 可直接执行。
 
 Build process:
 1. `npm run build:sea:bundle` — esbuild bundles `cli.js` + deps into `dist/sea-bundle.js`
-2. `node --build-sea=sea-config.json` — injects the bundle into a copy of the Node binary
+2. `npm run build:sea` — alias for `node --build-sea=sea-config.json`，生成 `dist/straightforward`
 3. `codesign --sign - dist/straightforward` — ad-hoc sign for macOS
 
 ## 交互规律
