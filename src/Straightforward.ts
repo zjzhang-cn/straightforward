@@ -301,8 +301,16 @@ export class Straightforward extends EventEmitter {
     req.locals = {} as Request["locals"]
     req.locals.isConnect = req.method.toLowerCase() === "connect"
     if (req.locals.isConnect) {
-      const [hostname, port] = req.url.split(":", 2) // format is: hostname:port
-      req.locals.urlParts = { host: hostname, port: parseInt(port), path: "" }
+      // CONNECT URL format: hostname:port, with optional brackets for IPv6: [::1]:443
+      const match = req.url.match(/^\[(.+)\]:(\d+)$|^([^:]+):(\d+)$/)
+      if (match) {
+        const hostname = match[1] || match[3]
+        const port = parseInt(match[2] || match[4])
+        req.locals.urlParts = { host: hostname, port, path: "" }
+      } else {
+        debug("_populateUrlParts: unparseable CONNECT url: %s", req.url)
+        return false
+      }
     } else {
       const urlParts = new URL(req.url)
       req.locals.urlParts = {
