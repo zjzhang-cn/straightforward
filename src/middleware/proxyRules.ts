@@ -41,11 +41,29 @@ export interface RequestAdditionsProxyRules {
 // ============================================================
 
 function globToRegex(glob: string): RegExp {
-  const escaped = glob
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&") // escape regex specials
-    .replace(/\\\*/g, "[^.]*") // * → matches within a segment
-    .replace(/\\\*\\\*/g, ".*") // ** → crosses dots
-  return new RegExp("^" + escaped + "$", "i")
+  // Special case: '*' alone matches everything
+  if (glob === "*") return /^.+$/i
+
+  let result = ""
+  let i = 0
+  while (i < glob.length) {
+    if (glob[i] === "*" && glob[i + 1] === "*") {
+      // ** → matches anything including dots
+      result += ".*"
+      i += 2
+    } else if (glob[i] === "*") {
+      // * → matches within a single segment (no dots)
+      result += "[^.]*"
+      i += 1
+    } else if ("[.^${}()|\\]".includes(glob[i])) {
+      result += "\\" + glob[i]
+      i += 1
+    } else {
+      result += glob[i]
+      i += 1
+    }
+  }
+  return new RegExp("^" + result + "$", "i")
 }
 
 // ============================================================
