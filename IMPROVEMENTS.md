@@ -36,9 +36,14 @@
 
 ### 优先级 1 — 安全 & 兼容性
 
-- [x] **1.1 Auth: Basic 认证大小写不敏感** — 改用 `/^basic\s+/i` 正则，兼容 `basic`/`Basic`/`BASIC` — commit `d708cbd`
-- [x] **1.2 Auth: 只传 user 不传 pass 时显式报错** — 三重否定简化 + 缺少参数时返回 407 — commit `d708cbd`
-- [x] **1.3 CLI: DEBUG 环境变量拼接 bug** — `"undefined,straightforward"` 修复 — commit `d708cbd`
+- [x] **1.1 Auth: Basic 认证大小写不敏感** — commit `d708cbd`
+- [x] **1.2 Auth: 只传 user 不传 pass 时显式报错** — commit `d708cbd`
+- [x] **1.3 CLI: DEBUG 环境变量拼接 bug** — commit `d708cbd`
+
+原设计文档（已实现，仅供参考）：
+
+<details>
+<summary>展开查看详细设计</summary>
 
 #### 1.1 Auth: Basic 认证大小写不敏感
 
@@ -97,6 +102,8 @@
 **理由**: 当 `DEBUG` 未定义时，`process.env.DEBUG += ",straightforward"` 结果是 `"undefined,straightforward"` — `undefined` 不是合法的 debug 命名空间。
 
 **风险**: 极低，三行修改。
+
+</details>
 
 ---
 
