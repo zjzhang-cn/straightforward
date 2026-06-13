@@ -88,6 +88,13 @@ export class Straightforward extends EventEmitter {
     this.opts = {
       requestTimeout: opts.requestTimeout || 60 * 1000, // 60s
     }
+
+    this.server.on("request", this._onRequest.bind(this))
+    this.server.on("connect", this._onConnect.bind(this))
+    this.server.on("error", this._onServerError.bind(this))
+    this.server.on("clientError", this._onRequestError.bind(this))
+    this.server.on("upgrade", this._onUpgrade.bind(this))
+
     debug("constructor: \t %o", {
       instanceId: this.instanceId,
       ...opts,
@@ -105,13 +112,6 @@ export class Straightforward extends EventEmitter {
   }
 
   public async listen(port: number = 8081, host: string = "0.0.0.0") {
-    this.server.on("request", this._onRequest.bind(this))
-    this.server.on("connect", this._onConnect.bind(this))
-    this.server.on("error", this._onServerError.bind(this))
-    this.server.on("clientError", this._onRequestError.bind(this))
-    this.server.on("upgrade", this._onUpgrade.bind(this))
-    process.on("uncaughtException", this._onUncaughtException.bind(this))
-
     return new Promise((resolve) =>
       this.server.listen(port, host, () => {
         debug("listen: \t %o", { port, host, pid: process.pid })
