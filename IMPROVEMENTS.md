@@ -236,7 +236,112 @@ const sf = new Straightforward({
 
 ---
 
-### 功能二：域名路由分发 (Request Routing)
+### 功能二：出口 IP 绑定 (Source IP Binding)
+
+**场景**：服务器有多个网卡 / 多个出口 IP，需要根据目标域名或客户端来源选择不同的出口 IP。例如：
+- 访问 `*.target-a.com` → 用网卡 `eth0` (10.0.0.1) 出站
+- 访问 `*.target-b.com` → 用网卡 `eth1` (10.0.1.1) 出站
+- 默认 → 用 `0.0.0.0`（系统路由选择）
+
+**当前状态**：`net.connect()` 和 `http.request()` 都没有指定 `localAddress`，操作系统自动选择出口 IP 和网卡。
+
+**设计方案**：`localAddress` 是 TCP 层的原生能力，Node.js `net.connect()` 和 `http.request()` 都支持。只需在两个地方传递：
+
+#### 方案 A：全局绑定（一个代理实例绑定一个出口 IP）
+
+```ts
+// 最简单：整个代理绑定到固定网卡
+const sf = new Straightforward({
+  localAddress: "10.0.0.1", // 所有出站连接都从 eth0 出
+})
+```
+
+在 `net.connect()` 和 `http.request()` 的 options 中添加 `localAddress`。
+
+**改动**：`Straightforward.ts` 中 3 行代码：
+
+```diff
+ const proxyReq = http.request({
+   method: req.method,
+   headers,
+   agent: this.#httpAgent,
++  ...(this.opts.localAddress ? { localAddress: this.opts.localAddress } : {}),
+   ...req.locals.urlParts,
+ })
+```
+
+```diff
+ const serverSocket = net.connect(
+   req.locals.urlParts.port,
+   req.locals.urlParts.host,
++  { localAddress: this.opts.localAddress },
+   () => { ... }
+ )
+```
+
+**复杂度**：~5 行。
+
+#### 方案 B：按域名绑定（与路由系统配合）
+
+```ts
+// 高级：不同域名从不同 IP 出站
+sf.onRequest.use(middleware.bind({
+  rules: [
+    { match: "*.target-a.com", localAddress: "10.0.0.1" },
+    { match: "*.target-b.com", localAddress: "10.0.1.1" },
+    { match: "*", localAddress: "0.0.0.0" },
+  ],
+}))
+
+sf.onConnect.use(middleware.bind({ /* 同上 */ }))
+```
+
+中间件将选中的 `localAddress` 写入 `req.locals`：
+
+```ts
+req.locals.localAddress = "10.0.0.1"
+```
+
+然后 `_proxyRequest` 和 `_proxyConnect` 读取 `req.locals.localAddress`。
+
+**路由规则设计**（复用路由分发相同的匹配逻辑）：
+
+```ts
+interface BindRule {
+  match: string           // glob: "*.example.com", "192.168.*", "*"
+  localAddress: string    // IP: "10.0.0.1"
+}
+```
+
+**实现路径**：
+1. 新增 `src/middleware/bind.ts`（~25 行，纯中间件）
+2. `_proxyRequest` 读取 `req.locals.localAddress`（+3 行）
+3. `_proxyConnect` 读取 `req.locals.localAddress`（+3 行）
+
+**复杂度**：~30 行新增。
+
+#### 方案 C：动态按端口绑定（一个端口 = 一个出口）
+
+```bash
+# 开多个实例，各自绑定不同出口
+node cli.js --port 8081 --local-address 10.0.0.1
+node cli.js --port 8082 --local-address 10.0.1.1
+```
+
+CLI 添加 `--local-address` 选项：
+
+```bash
+node cli.js --port 8081 --local-address 10.0.0.1
+node cli.js --port 8082 --local-address 10.0.1.1
+```
+
+客户端通过选择不同的代理端口来选择出口 IP。
+
+**复杂度**：~5 行（CLI 加选项 + 透传到 Straightforward）。
+
+---
+
+### 功能三：域名路由分发 (Request Routing)
 
 **场景**：根据目标域名或 IP 将请求分发到不同的上游代理。例如：
 - `*.internal.corp` → 直连（不走代理）
@@ -411,13 +516,14 @@ sf.gracefulClose({ timeout: 10_000 }) // 10 秒超时后强制关闭
 
 | 功能 | 复杂度 | 价值 | 独立中间件？ | 推荐 |
 |------|--------|------|-------------|------|
-| 二级代理 | ~40 行 | 高（核心场景扩展） | 否（需改核心） | **最先做** |
-| 域名路由分发 | ~50 行 | 高（企业场景刚需） | 半（中间件+核心读取） | **第二** |
-| IP ACL | ~35 行 | 中（安全增强） | 是（纯中间件） | 第三 |
-| Header 改写 | ~40 行 | 中（灵活性强） | 是（纯中间件） | 第四 |
-| 连接数限制 | ~50 行 | 中（防滥用） | 是（纯中间件） | 第五 |
-| 结构化日志 | ~30 行 | 低（debug 已够用） | 是（纯中间件） | 第六 |
-| 优雅关闭 | ~30 行 | 低（单机场景少） | 否（需改核心） | 第七 |
+| 出口 IP 绑定 | ~30 行 | 高（多网卡服务器刚需） | 半（核心+中间件） | **最先做** |
+| 二级代理 | ~40 行 | 高（核心场景扩展） | 否（需改核心） | **第二** |
+| 域名路由分发 | ~50 行 | 高（企业场景刚需） | 半（中间件+核心读取） | **第三** |
+| IP ACL | ~35 行 | 中（安全增强） | 是（纯中间件） | 第四 |
+| Header 改写 | ~40 行 | 中（灵活性强） | 是（纯中间件） | 第五 |
+| 连接数限制 | ~50 行 | 中（防滥用） | 是（纯中间件） | 第六 |
+| 结构化日志 | ~30 行 | 低（debug 已够用） | 是（纯中间件） | 第七 |
+| 优雅关闭 | ~30 行 | 低（单机场景少） | 否（需改核心） | 第八 |
 
 ---
 
