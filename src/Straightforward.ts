@@ -83,11 +83,21 @@ export class Straightforward extends EventEmitter {
     onConnect: 0,
   }
 
+  /** Reusable agent with keep-alive to avoid per-request TCP/TLS handshakes */
+  #httpAgent: http.Agent
+
   constructor(opts: Partial<StraightforwardOptions> = {}) {
     super()
     this.opts = {
       requestTimeout: opts.requestTimeout || 60 * 1000, // 60s
     }
+
+    this.#httpAgent = new http.Agent({
+      keepAlive: true,
+      maxSockets: 50,
+      maxFreeSockets: 10,
+      keepAliveMsecs: 30000,
+    })
 
     this.server.on("request", this._onRequest.bind(this))
     this.server.on("connect", this._onConnect.bind(this))
@@ -128,6 +138,7 @@ export class Straightforward extends EventEmitter {
     } catch (err) {
       debug("close err", err)
     }
+    this.#httpAgent.destroy()
     this.emit("close")
   }
 
@@ -154,6 +165,7 @@ export class Straightforward extends EventEmitter {
     const proxyReq = http.request({
       method: req.method,
       headers: req.headers,
+      agent: this.#httpAgent,
       ...req.locals.urlParts,
     })
     proxyReq.removeHeader("proxy-connection")
