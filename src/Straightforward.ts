@@ -104,7 +104,7 @@ export class Straightforward extends EventEmitter {
     }
   }
 
-  public async listen(port: number = 9191, host?: string) {
+  public async listen(port: number = 8081, host: string = "0.0.0.0") {
     this.server.on("request", this._onRequest.bind(this))
     this.server.on("connect", this._onConnect.bind(this))
     this.server.on("error", this._onServerError.bind(this))

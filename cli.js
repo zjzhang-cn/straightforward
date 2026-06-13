@@ -9,11 +9,12 @@ const argv = yargs
   .usage("Usage: $0 --port 9191 [options]")
   .option("port", {
     alias: "p",
-    default: 9191,
+    default: 8081,
     describe: `Port to bind on`,
     type: "number",
   })
   .option("host", {
+    default: "0.0.0.0",
     describe: `Host/interface to bind on`,
     type: "string",
   })

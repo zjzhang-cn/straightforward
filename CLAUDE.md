@@ -12,6 +12,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Build (CJS + ESM + type declarations via tsup)
 npm run build
 
+# Bundle CLI into single JS file (for SEA)
+npm run build:sea:bundle
+
+# Build standalone executable (Node.js SEA — requires static Node binary, not Homebrew's)
+npm run build:sea
+
 # Run all tests (AVA, verbose)
 npm test
 
@@ -25,7 +31,10 @@ npx ava -v -m "can proxy basic http requests"
 npm run ts
 
 # Start the proxy CLI (after building)
-node cli.js --port 9191
+node cli.js --port 8081
+
+# Start the standalone executable
+./dist/straightforward --port 8081
 ```
 
 ## Architecture
@@ -74,3 +83,14 @@ Test files:
 - Prettier with `semi: false`, 2-space indentation
 - EditorConfig enforces UTF-8, LF line endings
 - Node.js `debug` module with namespace `straightforward` — enable via `DEBUG=straightforward`
+
+## Node.js SEA (standalone executable)
+
+`sea-config.json` defines the SEA build. The output is `dist/straightforward` — a self-contained ~131MB binary that runs without Node.js installed.
+
+**Important:** `--build-sea` requires a statically-linked Node.js binary. Homebrew's Node is dynamically linked (68KB stub + libnode.dylib) and won't work. Download from [nodejs.org](https://nodejs.org) or use nvm (`nvm install 25` fetches static binaries).
+
+Build process:
+1. `npm run build:sea:bundle` — esbuild bundles `cli.js` + deps into `dist/sea-bundle.js`
+2. `node --build-sea=sea-config.json` — injects the bundle into a copy of the Node binary
+3. `codesign --sign - dist/straightforward` — ad-hoc sign for macOS

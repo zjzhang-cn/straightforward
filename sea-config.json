@@ -1,0 +1,6 @@
+{
+  "main": "dist/sea-bundle.js",
+  "output": "dist/straightforward",
+  "disableExperimentalSEAWarning": true,
+  "useCodeCache": true
+}
