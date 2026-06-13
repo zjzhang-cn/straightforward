@@ -61,6 +61,28 @@ Middleware functions have the signature `(context, next) => void | Promise<void>
 - **`echo`** — short-circuits HTTP requests by returning request info as JSON. For `onRequest` only.
 - **`proxyRules`** — unified routing middleware. Reads a rule table (match glob → upstream proxy + source IP), sets `req.locals.upstream` and `req.locals.localAddress`. Supports `type: "http" | "connect"` filtering, wildcard fallback with `default` section. Works on both `onRequest` and `onConnect`. The core (`Straightforward._proxyRequest` / `_proxyConnect`) reads these locals to route through an upstream proxy or bind specific local addresses.
 
+### Rule-set module (`src/rule-set/`)
+
+Zero-dependency domain matching engine for `geosite:` prefixed rules in proxyRules:
+
+- **`DomainTrie`** (`domain-trie.ts`) — reversed-domain suffix trie. Inserts domain rules by reversing their labels (e.g. `google.com` → `com.google`), then matches hostnames by walking the trie. O(domain-length) match time. Supports suffix match semantics (same as v2ray `Domain` type): `google.com` matches `www.google.com` but not `notgoogle.com`.
+- **`resolver.ts`** — `createRuleSetResolver(rulesDir)` scans a directory of `.txt` files, loads each as a named tag (e.g. `gfw.txt` → tag `"gfw"`), and provides `match(tag, hostname)` for efficient domain lookup. Also supports direct file-path references (`geosite:./custom.txt`).
+- **`index.ts`** — barrel export as `ruleSet` namespace.
+
+Usage: download `gfw.txt`, `direct-list.txt`, etc. from [loyalsoldier/v2ray-rules-dat releases](https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest), then reference them in proxyRules:
+
+```json
+{
+  "rules": [
+    { "match": "geosite:gfw", "upstream": { "host": "us-proxy", "port": 8080 } },
+    { "match": "*.internal.corp", "upstream": null },
+    { "match": "*", "upstream": { "host": "default-proxy", "port": 3128 } }
+  ]
+}
+```
+
+CLI: `straightforward --rules-dir ./rules/ --rules proxyrules.json`
+
 ### CLI (`cli.js`)
 
 Plain JS entry point (not TypeScript). Uses `yargs` to parse options, then instantiates `Straightforward`, wires up auth/echo/proxyRules middleware based on flags, and calls `sf.listen()` or `sf.cluster()`.
@@ -82,8 +104,10 @@ Test files:
 - `test/basics.test.ts` — server start/stop, HTTP proxying, HTTPS proxying, middleware triggering
 - `test/auth.test.ts` — dynamic authentication + echo integration
 - `test/echo.test.ts` — echo middleware
-- `test/proxyRules.test.ts` — proxyRules unit tests (glob matching, type filtering, defaults, rule ordering)
+- `test/proxyRules.test.ts` — proxyRules unit tests (glob matching, type filtering, defaults, rule ordering, geosite: prefix)
 - `test/comprehensive.test.ts` — P0 fixes verification + edge cases (stress test is `test/stress.ts`)
+- `test/rule-set/domain-trie.test.ts` — DomainTrie unit tests (exact, suffix, dedup, case-insensitive, 10k volume)
+- `test/rule-set/resolver.test.ts` — RuleSetResolver unit tests (file loading, matching, path references, large sets)
 
 ## Code conventions
 
