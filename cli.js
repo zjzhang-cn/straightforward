@@ -93,7 +93,12 @@ if (argv.debug) {
 const { Straightforward, middleware } = require("./dist/index.js")
 
 async function cli() {
-  const sf = new Straightforward()
+  const opts = {}
+  if (argv.localAddress) {
+    opts.localAddress = argv.localAddress
+  }
+
+  const sf = new Straightforward(opts)
 
   if (!argv.silent) {
     sf.on("listen", (port, _pid, _server, host) => {
