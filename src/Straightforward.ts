@@ -17,6 +17,8 @@ const debug = Debug("straightforward")
 
 export interface StraightforwardOptions {
   requestTimeout: number
+  /** Global source IP to bind for all outbound connections (multi-NIC servers). Overridden by per-rule localAddress from proxyRules. */
+  localAddress?: string
 }
 
 export type Request = http.IncomingMessage & RequestAdditions
@@ -92,6 +94,12 @@ export class Straightforward extends EventEmitter {
     super()
     this.opts = {
       requestTimeout: opts.requestTimeout || 60 * 1000, // 60s
+    }
+
+    // When localAddress is set on the instance, all outbound connections
+    // (both direct and via upstream) bind to this source IP.
+    if (opts.localAddress) {
+      this.#globalLocalAddress = opts.localAddress
     }
 
     this.#httpAgent = new http.Agent({
@@ -189,7 +197,8 @@ export class Straightforward extends EventEmitter {
     }
 
     const upstream = req.locals.upstream
-    const localAddr = req.locals.localAddress
+    // Per-rule localAddress takes priority over global; fallback to instance-level
+    const localAddr = req.locals.localAddress ?? this.#globalLocalAddress
 
     if (upstream) {
       return this._proxyRequestViaUpstream(req, res, upstream, localAddr, headers)
@@ -298,6 +307,9 @@ export class Straightforward extends EventEmitter {
   /** Per-upstream agent cache for connection reuse */
   #upstreamAgents: Map<string, http.Agent> = new Map()
 
+  /** Source IP to bind for all outbound connections when no per-rule override */
+  #globalLocalAddress: string | undefined
+
   private async _onResponse(
     req: Request,
     res: Response,
@@ -346,7 +358,8 @@ export class Straightforward extends EventEmitter {
     head: Buffer
   ) {
     const upstream = req.locals.upstream
-    const localAddr = req.locals.localAddress
+    // Per-rule localAddress takes priority over global; fallback to instance-level
+    const localAddr = req.locals.localAddress ?? this.#globalLocalAddress
 
     if (upstream) {
       return this._proxyConnectViaUpstream(
