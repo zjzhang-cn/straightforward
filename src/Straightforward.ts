@@ -133,7 +133,10 @@ export class Straightforward extends EventEmitter {
 
   private async _onRequest(req: Request, res: Response) {
     debug("onRequest: \t %s %s", req.method, req.url)
-    this._populateUrlParts(req)
+    if (!this._populateUrlParts(req)) {
+      res.writeHead(400)
+      return res.end("Invalid request")
+    }
     this.stats.onRequest++
     await this.onRequest.dispatch({ req, res })
 
@@ -207,7 +210,15 @@ export class Straightforward extends EventEmitter {
     head: Buffer
   ) {
     debug("onConnect: \t %s %s", req.method, req.url)
-    this._populateUrlParts(req)
+    if (!this._populateUrlParts(req)) {
+      clientSocket.end(
+        "HTTP/1.1 400 Bad Request\r\n" +
+          "Content-Type: text/plain\r\n" +
+          "\r\n" +
+          "Invalid request"
+      )
+      return
+    }
     this.stats.onConnect++
     await this.onConnect.dispatch({ req, clientSocket, head })
     if (!req.destroyed && clientSocket.writable) {
@@ -282,11 +293,12 @@ export class Straightforward extends EventEmitter {
     this.emit("uncaughtException", err)
   }
 
-  private _populateUrlParts(req: Request) {
+  private _populateUrlParts(req: Request): boolean {
     if (!req.method || !req.url) {
-      throw new Error("Invalid request")
+      debug("_populateUrlParts: invalid request, missing method or url")
+      return false
     }
-    ;(req.locals as any) = {}
+    req.locals = {} as Request["locals"]
     req.locals.isConnect = req.method.toLowerCase() === "connect"
     if (req.locals.isConnect) {
       const [hostname, port] = req.url.split(":", 2) // format is: hostname:port
@@ -299,5 +311,6 @@ export class Straightforward extends EventEmitter {
         path: urlParts.pathname + urlParts.search,
       }
     }
+    return true
   }
 }
