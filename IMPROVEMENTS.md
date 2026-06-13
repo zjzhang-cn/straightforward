@@ -808,6 +808,170 @@ fs.watch("proxyrules.json", () => {
 
 ---
 
+#### 设计审查：当前 `proxyRules` 方案的不足与建议
+
+对当前设计进行完整审查后，以下问题值得考虑：
+
+##### 问题 1：`upstream: null` vs `upstream: undefined` 语义不清
+
+当前 `upstream` 可以是 `null` 或 `undefined`，两者行为相同（直连），但语义混在一起。建议明确区分：
+
+```ts
+interface ProxyRule {
+  match: string
+  action: "connect" | "forward"    // CONNECT 隧道 / HTTP 转发
+  localAddress?: string
+  upstream?: UpstreamProxy         // 不写 = 直连; 写了 = 走这个上游
+}
+```
+
+`null`/`undefined` 统一为"不写"。
+
+##### 问题 2：规则匹配缺少 `type` 字段区分 HTTP 和 CONNECT
+
+当前规则同时作用于 `onRequest`（HTTP）和 `onConnect`（HTTPS），但没有能力对同一域名区分 HTTP 和 CONNECT 行为。某些场景下 HTTP 需要走一个代理，CONNECT 需要走另一个。
+
+```diff
+ interface ProxyRule {
+   match: string
++  /** 仅对特定请求类型生效，不写 = 两种都匹配 */
++  type?: "http" | "connect"
+   localAddress?: string
+   upstream?: UpstreamProxy | null
+ }
+```
+
+##### 问题 3：缺少 `priority` 字段 — 规则顺序太脆弱
+
+当前"第一条匹配生效"依赖数组顺序。人编辑 JSON 时很容易误排序。加 `priority` 更健壮：
+
+```json
+{ "match": "*.google.com", "priority": 100, "upstream": {...} }
+{ "match": "*.google.co.uk", "priority": 200, "upstream": {...} }
+```
+
+`priority` 越高越优先。省略时按出现顺序（兼容当前行为）。但考虑到复杂度，**可以作为可选字段**，不是必须。
+
+##### 问题 4：没有超时、重试、熔断配置
+
+上游代理可能宕机，当前设计没有容错机制。建议：
+
+```json
+{
+  "match": "*.google.com",
+  "localAddress": "10.0.2.1",
+  "upstream": {
+    "host": "us-proxy.example.com",
+    "port": 8080,
+    "timeout": 10000,
+    "retries": 2,
+    "circuitBreaker": {
+      "failureThreshold": 5,
+      "resetTimeout": 30000
+    }
+  }
+}
+```
+
+**但有争议**：代理自身存活（如 `requestTimeout`）已经有全局配置。上游代理的容错应该放在上游代理本身，而不是中间代理。建议先不加，等实际需求出来再考虑。
+
+##### 问题 5：匹配维度太窄 — 只能按域名
+
+当前 `match` 只匹配目标 hostname。实际场景可能还需要按端口、协议、客户端 IP 匹配：
+
+```ts
+interface ProxyRule {
+  match: {
+    host?: string            // "*.google.com"
+    port?: number | string   // 443 | "8000-9000"
+    protocol?: "http" | "https" | "ws"
+    clientIP?: string        // "10.0.0.0/8" — 按客户端来源路由
+  }
+}
+```
+
+**建议**：第一版保持 `match: string` 简单匹配域名。等后续真正需要多维度匹配时再加，保持渐进式复杂度。
+
+##### 问题 6：upstream 缺乏负载均衡能力
+
+如果一个上游代理不够用，需要多个上游做负载均衡：
+
+```json
+{
+  "match": "*.google.com",
+  "upstream": [
+    { "host": "us-proxy-1.example.com", "port": 8080, "weight": 2 },
+    { "host": "us-proxy-2.example.com", "port": 8080, "weight": 1 }
+  ]
+}
+```
+
+`weight: 2` 的代理收到两倍请求。实现用加权轮询。
+
+**但**：这是 Nginx/Envoy 的领域，不是个前向代理该做的。建议**不做**，保持 `upstream` 为单对象。
+
+##### 问题 7：规则校验 — JSON Schema
+
+`$schema` 引用的 schema 文件需要真的发布。建议第一版就带一个简单的 JSON Schema：
+
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["rules"],
+  "properties": {
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/rule" }
+    },
+    "default": { "$ref": "#/definitions/defaults" }
+  },
+  "definitions": {
+    "rule": {
+      "type": "object",
+      "required": ["match"],
+      "properties": {
+        "match": { "type": "string" },
+        "localAddress": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+\\.\\d+$" },
+        "upstream": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["host", "port"],
+              "properties": {
+                "host": { "type": "string" },
+                "port": { "type": "number", "minimum": 1, "maximum": 65535 },
+                "auth": {
+                  "type": "object",
+                  "required": ["user", "pass"],
+                  "properties": {
+                    "user": { "type": "string" },
+                    "pass": { "type": "string" }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+##### 改进建议总结
+
+| # | 建议 | 是否纳入第一版 |
+|---|------|:---:|
+| 1 | 统一 `upstream` 语义，去掉 `null` | **是** |
+| 2 | 规则 `type?: "http" \| "connect"` | **是** — 小改动 |
+| 3 | `priority` 字段覆盖顺序 | **可延后** — 数组顺序对 JSON 够用 |
+| 4 | 上游超时、重试、熔断 | **不做** — 责任在代理链上游节点 |
+| 5 | 多维度匹配（端口、协议、客户端 IP） | **可延后** — 第一版用 hostname 足够 |
+| 6 | 上游负载均衡（多 upstream） | **不做** — 非前向代理职责 |
+| 7 | JSON Schema 随第一版发布 | **是** — 对配置体验很重要 |
+
 ### 功能五：IP 访问控制 (ACL Middleware)
 
 **场景**：基于客户端 IP 允许/拒绝连接。类似防火墙白名单/黑名单。
