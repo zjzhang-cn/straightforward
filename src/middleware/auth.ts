@@ -51,16 +51,19 @@ export const auth =
       return sendAuthRequired()
     }
     const [proxyUser, proxyPass] = Buffer.from(
-      proxyAuth.replace("Basic ", ""),
+      proxyAuth.replace(/^basic\s+/i, ""),
       "base64"
     )
       .toString()
       .split(":")
 
-    if (!dynamic && !!(!!user && !!pass)) {
+    if (!dynamic && user && pass) {
       if (user !== proxyUser || pass !== proxyPass) {
         return sendAuthRequired()
       }
+    } else if (!dynamic && (!user || !pass)) {
+      debug("auth: static mode requires both user and pass")
+      return sendAuthRequired()
     }
     ctx.req.locals.proxyUser = proxyUser
     ctx.req.locals.proxyPass = proxyPass

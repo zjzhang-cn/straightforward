@@ -85,7 +85,9 @@ const argv = yargs
   .epilog(`Report issues at ${pkg.bugs.url}`).argv
 
 if (argv.debug) {
-  process.env.DEBUG += ",straightforward"
+  process.env.DEBUG = process.env.DEBUG
+    ? process.env.DEBUG + ",straightforward"
+    : "straightforward"
 }
 
 const { Straightforward, middleware } = require("./dist/index.js")
