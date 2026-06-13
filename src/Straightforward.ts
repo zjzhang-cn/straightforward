@@ -253,15 +253,23 @@ export class Straightforward extends EventEmitter {
       }
     )
 
+    serverSocket.on("error", (err) => {
+      debug("serverSocket error", err)
+      if (clientSocket.writable && !clientSocket.destroyed) {
+        clientSocket.end(
+          "HTTP/1.1 502 Bad Gateway\r\n" +
+            "Content-Type: text/plain\r\n" +
+            "\r\n" +
+            "Upstream connection failed: " +
+            (err as Error).message
+        )
+      }
+      clientSocket.destroy()
+    })
+
     clientSocket.on("destroyed", () => {
       debug("clientSocket - destroyed: \t %s %s", req.method, req.url)
       serverSocket.destroy()
-    })
-
-    // https://github.com/nodejs/node/issues/23169#issuecomment-573377044
-    serverSocket.on("error", (err) => {
-      debug("serverSocket error", err)
-      clientSocket.destroy()
     })
   }
 
