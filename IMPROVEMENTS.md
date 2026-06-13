@@ -22,6 +22,14 @@
 - [x] 完整测试套件 (32 tests, 2 skipped) — commit `e8c14e9`
 - [x] 压力测试：60s / 64 并发 / 140 RPS / 零内存泄漏
 
+### 统一配置文件 (proxyRules) ✅
+
+- [x] **proxyRules 中间件** (`src/middleware/proxyRules.ts`): glob 匹配 + 规则遍历 + 写入 `req.locals.upstream` / `req.locals.localAddress` — commit `857fc5c`
+- [x] **核心路由感知** (`Straightforward.ts`): `_proxyRequest` 读取 `req.locals.upstream` 走 `_proxyRequestViaUpstream`，`_proxyConnect` 读取后走 `_proxyConnectViaUpstream`；`localAddress` 在所有出站连接中生效 — commit `857fc5c`
+- [x] **CLI 三层配置** (`cli.js`): `--rules` 文件 / `--upstream-*` 简化模式 / 零配置默认直连 — commit `746e121`
+- [x] **proxyRules 单元测试** (11 tests): glob 匹配、type 过滤、规则顺序、默认值、upstream 传播、异常处理 — commit `a21601e`
+- [x] **CLAUDE.md 更新** — commit `ba7f276`
+
 ---
 
 ## 待改进
@@ -196,6 +204,8 @@ remove(mw: Middleware<T>): void {
 ## 功能增强方向
 
 以下功能按"保持最小化、零外部依赖"的原则设计，均基于现有中间件体系扩展。
+
+> **注**：以下"功能一"至"功能四"中的核心能力（出口 IP 绑定、二级代理、域名路由分发、统一配置文件）**已完成实现**。保留设计文档作为参考。
 
 ---
 
@@ -1094,7 +1104,10 @@ sf.gracefulClose({ timeout: 10_000 }) // 10 秒超时后强制关闭
 
 | 功能 | 复杂度 | 价值 | 独立中间件？ | 推荐 |
 |------|--------|------|-------------|------|
-| 统一配置文件 (proxyRules) | ~90 行 | 高（合并三个核心能力） | 否（改核心 + 新建中间件） | **最先做** |
+| 统一配置文件 (proxyRules) | ~90 行 | 高（合并三个核心能力） | 否（改核心 + 新建中间件） | **已完成** ✅ |
+| 出口 IP 绑定 | — | — | — | **合并入 proxyRules** |
+| 二级代理 | — | — | — | **合并入 proxyRules** |
+| 域名路由分发 | — | — | — | **合并入 proxyRules** |
 | IP ACL | ~35 行 | 中（安全增强） | 是（纯中间件） | 第四 |
 | Header 改写 | ~40 行 | 中（灵活性强） | 是（纯中间件） | 第五 |
 | 连接数限制 | ~50 行 | 中（防滥用） | 是（纯中间件） | 第六 |
