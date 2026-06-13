@@ -481,23 +481,117 @@ interface ProxyRulesConfig {
 #### CLI 使用
 
 ```bash
-# JSON 配置文件
+# 使用配置文件
 straightforward --rules ./proxyrules.json
 
-# YAML 也可以（如果后续支持，parser 零依赖）
-straightforward --rules ./proxyrules.yaml
+# 无配置文件时，使用内置简化模式（等价于直连）
+straightforward
+# 等价于：所有请求直连、系统自动选出口 IP
 ```
+
+#### 零配置模式：无文件时的默认行为
+
+当不传 `--rules` 时，代理使用**内置默认规则**。默认行为的规则等价于：
+
+```json
+{
+  "rules": [],
+  "default": {
+    "localAddress": "0.0.0.0",
+    "upstream": null
+  }
+}
+```
+
+即：所有域名直连、由操作系统自动选择出口 IP，完全兼容当前版本的默认行为。
+
+#### 简化模式：无需文件也能用 CLI 参数指定上游和出口
+
+即使没有配置文件，也可以通过 CLI 参数使用上游代理和出口 IP：
+
+```bash
+# 所有流量经过一个上游代理
+straightforward --upstream-host corp-proxy.internal --upstream-port 3128
+
+# 所有流量绑定到固定出口 IP
+straightforward --local-address 10.0.0.1
+
+# 组合使用
+straightforward \
+  --upstream-host corp-proxy.internal --upstream-port 3128 \
+  --upstream-auth "user:pass" \
+  --local-address 10.0.0.1
+
+# 组合使用（不含上游，仅绑定出口）
+straightforward --local-address 10.0.1.1
+```
+
+**CLI → 运行时的映射**：当 CLI 指定了 `--upstream-*` 或 `--local-address` 时，内部自动构建一条 `match: "*"` 的万能规则：
+
+```ts
+// cli.js 内部
+let rules
+if (argv.rules) {
+  rules = JSON.parse(fs.readFileSync(argv.rules, "utf-8")).rules
+} else if (argv.upstreamHost || argv.localAddress) {
+  // 简化的单出口 / 单上游模式
+  rules = [
+    {
+      match: "*",
+      localAddress: argv.localAddress || "0.0.0.0",
+      upstream: argv.upstreamHost
+        ? {
+            host: argv.upstreamHost,
+            port: argv.upstreamPort || 3128,
+            ...(argv.upstreamAuth
+              ? { auth: { user: argv.upstreamAuth.split(":")[0], pass: argv.upstreamAuth.split(":")[1] } }
+              : {}),
+          }
+        : null,
+    },
+  ]
+} else {
+  // 零配置：默认直连
+  rules = []
+}
+```
+
+**设计原则**：
+
+| 场景 | 使用方式 | 灵活性 |
+|------|---------|--------|
+| 零配置（默认） | `straightforward` | 最小：直连，系统选出口 |
+| 单出口/单上游 | `straightforward --upstream-host ... --local-address ...` | 中：全局统一行为 |
+| 完整规则 | `straightforward --rules proxyrules.json` | 高：按域名精细控制 |
+
+这样从"零配置就能用"到"完整规则文件"构成一条平滑的学习曲线。
 
 #### 程序化使用
 
 ```ts
 import { Straightforward, proxyRules } from "straightforward"
-import rules from "./proxyrules.json" assert { type: "json" }
 
-const sf = new Straightforward()
-sf.onRequest.use(proxyRules({ rules: rules.rules }))
-sf.onConnect.use(proxyRules({ rules: rules.rules }))
-await sf.listen(8081)
+// 方式 1：无规则（默认直连）
+const sf1 = new Straightforward()
+// 等价于所有请求直连、系统选出口
+
+// 方式 2：内联规则（不读文件）
+const sf2 = new Straightforward()
+const rules = proxyRules({
+  rules: [
+    { match: "*.internal.corp", upstream: null, localAddress: "10.0.0.1" },
+    { match: "*.google.com", upstream: { host: "us-proxy", port: 8080 }, localAddress: "10.0.2.1" },
+    { match: "*", localAddress: "0.0.0.0" },
+  ],
+})
+sf2.onRequest.use(rules)
+sf2.onConnect.use(rules)
+
+// 方式 3：从文件加载
+import rulesFile from "./proxyrules.json" with { type: "json" }
+const sf3 = new Straightforward()
+sf3.onRequest.use(proxyRules({ rules: rulesFile.rules }))
+sf3.onConnect.use(proxyRules({ rules: rulesFile.rules }))
 ```
 
 #### 中间件行为：`proxyRules`
