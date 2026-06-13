@@ -158,17 +158,37 @@ export class Straightforward extends EventEmitter {
     }
   }
 
+  /** Hop-by-hop headers that must not be forwarded */
+  static #HOP_BY_HOP = new Set([
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "proxy-connection",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+  ])
+
   private _proxyRequest(req: Request, res: Response) {
     // debug("proxyReq: \t %s %s", req.method, req.url, req.locals)
+
+    // Strip hop-by-hop headers before forwarding
+    const headers: Record<string, string | string[] | undefined> = { ...req.headers }
+    for (const key of Object.keys(headers)) {
+      if (Straightforward.#HOP_BY_HOP.has(key.toLowerCase())) {
+        delete headers[key]
+      }
+    }
 
     // https://nodejs.org/api/http.html#http_http_request_options_callback
     const proxyReq = http.request({
       method: req.method,
-      headers: req.headers,
+      headers,
       agent: this.#httpAgent,
       ...req.locals.urlParts,
     })
-    proxyReq.removeHeader("proxy-connection")
 
     req.on("destroyed", () => {
       debug("proxyReq - destroyed: \t %s %s", req.method, req.url)
