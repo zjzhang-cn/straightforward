@@ -478,6 +478,104 @@ interface ProxyRulesConfig {
 
 **第一条匹配规则生效**。每条规则只定义自己关心的字段，未定义字段继承 `default`。
 
+#### 完整示例文件：`proxyrules.json`
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/berstend/straightforward/main/schemas/proxyrules.schema.json",
+  "rules": [
+    {
+      "match": "*.internal.corp",
+      "localAddress": "10.0.0.1",
+      "upstream": {
+        "host": "corp-proxy.internal",
+        "port": 3128,
+        "auth": { "user": "agent", "pass": "s3cret" }
+      }
+    },
+    {
+      "match": "*.aws.amazonaws.com",
+      "localAddress": "10.0.1.1",
+      "upstream": null
+    },
+    {
+      "match": "*.google.com",
+      "localAddress": "10.0.2.1",
+      "upstream": {
+        "host": "us-proxy.example.com",
+        "port": 8080
+      }
+    },
+    {
+      "match": "*.microsoft.com",
+      "localAddress": "10.0.2.1",
+      "upstream": {
+        "host": "us-proxy.example.com",
+        "port": 8080
+      }
+    },
+    {
+      "match": "*.github.com",
+      "localAddress": "10.0.2.1",
+      "upstream": {
+        "host": "us-proxy.example.com",
+        "port": 8080
+      }
+    },
+    {
+      "match": "*.office365.com",
+      "localAddress": "10.0.3.1",
+      "upstream": {
+        "host": "eu-proxy.example.com",
+        "port": 3128,
+        "auth": { "user": "o365", "pass": "cl0ud" }
+      }
+    },
+    {
+      "match": "*.eu-west-1.amazonaws.com",
+      "localAddress": "10.0.3.1",
+      "upstream": {
+        "host": "eu-proxy.example.com",
+        "port": 3128
+      }
+    },
+    {
+      "match": "10.*",
+      "localAddress": "0.0.0.0",
+      "upstream": null
+    },
+    {
+      "match": "192.168.*",
+      "localAddress": "0.0.0.0",
+      "upstream": null
+    },
+    {
+      "match": "*",
+      "localAddress": "0.0.0.0",
+      "upstream": null
+    }
+  ],
+  "default": {
+    "localAddress": "0.0.0.0",
+    "upstream": null
+  }
+}
+```
+
+这个示例覆盖了典型的多网卡 + 多上游代理场景：
+
+| 规则 | 说明 |
+|------|------|
+| `*.internal.corp` | 内网流量走企业代理 `corp-proxy:3128`，绑定内网网卡 `10.0.0.1` |
+| `*.aws.amazonaws.com` | AWS API 直连（不走代理），绑定 DMZ 网卡 `10.0.1.1` |
+| `*.google.com`, `*.microsoft.com`, `*.github.com` | 多个海外服务共享同一代理 `us-proxy:8080`，共享出口 `10.0.2.1` |
+| `*.office365.com` | O365 走欧洲代理 `eu-proxy:3128`（带认证），绑定 `10.0.3.1` |
+| `*.eu-west-1.amazonaws.com` | AWS 欧洲区走欧洲代理，绑定 `10.0.3.1` |
+| `10.*`, `192.168.*` | RFC 1918 内网地址直连，系统选出口（确保内网可达） |
+| `*` | 兜底规则：直连、系统选出口 |
+
+**规则数量**：10 条，覆盖 6 个上游代理 + 2 个内网 CIDR + 1 个兜底。**顺序很重要**：规则从上到下匹配，第一匹配生效。
+
 #### CLI 使用
 
 ```bash
