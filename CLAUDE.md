@@ -59,10 +59,16 @@ Middleware functions have the signature `(context, next) => void | Promise<void>
 
 - **`auth`** — supports static (`{ user, pass }`) and dynamic (`{ dynamic: true }`) authentication. In dynamic mode it parses the `Proxy-Authorization` header and populates `ctx.req.locals.proxyUser`/`proxyPass` without validating. Works on both `onRequest` and `onConnect`.
 - **`echo`** — short-circuits HTTP requests by returning request info as JSON. For `onRequest` only.
+- **`proxyRules`** — unified routing middleware. Reads a rule table (match glob → upstream proxy + source IP), sets `req.locals.upstream` and `req.locals.localAddress`. Supports `type: "http" | "connect"` filtering, wildcard fallback with `default` section. Works on both `onRequest` and `onConnect`. The core (`Straightforward._proxyRequest` / `_proxyConnect`) reads these locals to route through an upstream proxy or bind specific local addresses.
 
 ### CLI (`cli.js`)
 
-Plain JS entry point (not TypeScript). Uses `yargs` to parse options, then instantiates `Straightforward`, wires up auth/echo middleware based on flags, and calls `sf.listen()` or `sf.cluster()`.
+Plain JS entry point (not TypeScript). Uses `yargs` to parse options, then instantiates `Straightforward`, wires up auth/echo/proxyRules middleware based on flags, and calls `sf.listen()` or `sf.cluster()`.
+
+Three-tier config:
+1. Zero-config: `straightforward` → direct connect, OS picks source IP
+2. CLI-only: `--upstream-host/port` + `--local-address` → single global rule
+3. Full: `--rules proxyrules.json` → per-domain routing with upstream + source IP
 
 ### Types
 
@@ -76,6 +82,8 @@ Test files:
 - `test/basics.test.ts` — server start/stop, HTTP proxying, HTTPS proxying, middleware triggering
 - `test/auth.test.ts` — dynamic authentication + echo integration
 - `test/echo.test.ts` — echo middleware
+- `test/proxyRules.test.ts` — proxyRules unit tests (glob matching, type filtering, defaults, rule ordering)
+- `test/comprehensive.test.ts` — P0 fixes verification + edge cases (stress test is `test/stress.ts`)
 
 ## Code conventions
 
@@ -91,6 +99,7 @@ Test files:
 | TCP_NODELAY on CONNECT sockets | Eliminates ~40ms Nagle-algorithm delay per packet |
 | HTTP Keep-Alive Agent (`#httpAgent`) | Reuses upstream TCP+TLS connections, 5-10x throughput gain |
 | Hop-by-hop header stripping | Removes `Connection`, `Proxy-Authorization`, `Transfer-Encoding`, etc. before forwarding — prevents connection misrouting |
+| Upstream proxy agent reuse (`#upstreamAgents`) | Per-upstream agent cache; reuses connections to the same upstream proxy |
 
 Stress test: `node --expose-gc -r esbuild-register test/stress.ts` (60s, 64 concurrent, httpbin.org).
 
@@ -104,3 +113,5 @@ Build process:
 1. `npm run build:sea:bundle` — esbuild bundles `cli.js` + deps into `dist/sea-bundle.js`
 2. `node --build-sea=sea-config.json` — injects the bundle into a copy of the Node binary
 3. `codesign --sign - dist/straightforward` — ad-hoc sign for macOS
+
+- 每次完成我交给你的任务后, 你都要通知我说爸爸工作完成了
