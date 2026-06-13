@@ -55,17 +55,20 @@ export const acl = (
       return sendDeny(ctx, statusCode, `${message}: unable to determine client IP`)
     }
 
-    // ── allow list ──
+    // ── allow list (checked first, takes priority over deny) ──
     if (opts.allow && opts.allow.length > 0) {
       const allowed = opts.allow.some((rule) => ipMatches(clientIP, rule))
-      if (!allowed) {
-        debug(`acl: ${clientIP} not in allow list → ${statusCode}`)
-        return sendDeny(ctx, statusCode, `${message}: your IP ${clientIP} is not allowed`)
+      if (allowed) {
+        debug(`acl: ${clientIP} matched allow list → pass`)
+        return next()
       }
-      debug(`acl: ${clientIP} matched allow list → pass`)
+      // Not in allow list → deny regardless of whether it's also in deny list.
+      // allow list is exclusive: only IPs in the list pass through.
+      debug(`acl: ${clientIP} not in allow list → ${statusCode}`)
+      return sendDeny(ctx, statusCode, `${message}: your IP ${clientIP} is not allowed`)
     }
 
-    // ── deny list ──
+    // ── deny list (only checked when allow list is empty) ──
     if (opts.deny && opts.deny.length > 0) {
       const denied = opts.deny.some((rule) => ipMatches(clientIP, rule))
       if (denied) {
