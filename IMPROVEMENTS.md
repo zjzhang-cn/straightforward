@@ -21,6 +21,7 @@
 
 - [x] 完整测试套件 (32 tests, 2 skipped) — commit `e8c14e9`
 - [x] 压力测试：60s / 64 并发 / 43 RPS / 零内存泄漏（~3% 失败率，因 httpbin.org 限流）
+- [x] 当前测试总数：**66 tests passed, 2 skipped**（含 DomainTrie 13 + Resolver 12 + proxyRules 16 + ACL 18 + basics 5 + auth 1 + echo 1 + comprehensive 12）
 
 ### 统一配置文件 (proxyRules) ✅
 
@@ -44,6 +45,17 @@
 - [x] **ACL 设计文档** (`docs/IP-ACL-DESIGN.md`) — commit `423d9da`
 - [x] **ACL 中间件** (`src/middleware/acl.ts`): 白名单/黑名单、IPv4/IPv6 CIDR 匹配，零外部依赖 — commit `a8b19ea`
 - [x] **ACL 单元测试** (18 tests): 精确匹配、CIDR、IPv6、CONNECT、优先级 — commit `854a04f`
+
+### v2ray-rules-dat 集成 ✅
+
+- [x] **Rule-set 模块** (`src/rule-set/`): DomainTrie 域名后缀匹配、RuleSetResolver 规则文件加载、零外部依赖 — commit `432fa8b`
+- [x] **proxyRules geosite: 前缀**: `match` 字段支持 `geosite:gfw` 等语法，与 glob 规则共存 — commit `432fa8b`
+- [x] **CLI `--rules-dir`**: 指定规则文件目录，自动加载所有 .txt 文件 — commit `432fa8b`
+- [x] **Rule-set 单元测试** (25 tests): DomainTrie 13 + Resolver 12 — commit `5c7ff2b`
+- [x] **proxyRules geosite 测试** (5 tests): mock resolver 集成测试 — commit `5c7ff2b`
+- [x] **CLAUDE.md 更新**: rule-set 模块文档 — commit `9defb86`
+- [x] **自动下载** (`src/rule-set/downloader.ts`): 从 GitHub Release 自动下载最新规则文件，零依赖 — commit `38755ee`
+- [x] **CLI `--rules-download` / `--rules-download-force`** — commit `38755ee`
 
 ---
 
@@ -1134,6 +1146,7 @@ sf.gracefulClose({ timeout: 10_000 }) // 10 秒超时后强制关闭
 | 出口 IP 绑定 | — | — | — | **合并入 proxyRules** |
 | 二级代理 | — | — | — | **合并入 proxyRules** |
 | 域名路由分发 | — | — | — | **合并入 proxyRules** |
+| v2ray-rules-dat 集成 | ~350 行 | 高（复用社区规则） | 是（纯模块 + proxyRules 扩展） | **已完成** ✅ |
 | IP ACL | ~170 行 | 中（安全增强） | 是（纯中间件） | **已完成** ✅ |
 | Header 改写 | ~40 行 | 中（灵活性强） | 是（纯中间件） | 第五 |
 | 连接数限制 | ~50 行 | 中（防滥用） | 是（纯中间件） | 第六 |
