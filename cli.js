@@ -49,6 +49,27 @@ const argv = yargs
     describe: `Specify how many cluster workers to spawn`,
     type: "number",
   })
+  .option("rules", {
+    describe: `Path to proxyrules.json config file`,
+    type: "string",
+  })
+  .option("upstream-host", {
+    describe: `Upstream proxy host (when not using --rules)`,
+    type: "string",
+  })
+  .option("upstream-port", {
+    describe: `Upstream proxy port (when not using --rules)`,
+    type: "number",
+    default: 3128,
+  })
+  .option("upstream-auth", {
+    describe: `Upstream proxy auth "user:pass" (when not using --rules)`,
+    type: "string",
+  })
+  .option("local-address", {
+    describe: `Source IP address to bind outgoing connections to`,
+    type: "string",
+  })
   .option("quiet", {
     alias: "q",
     describe: `Suppress request logs`,
@@ -79,6 +100,54 @@ async function cli() {
       `)
     })
     sf.on("serverError", (err) => console.error("An error occured.", err))
+  }
+
+  // ── Proxy rules (unified config: upstream + localAddress + routing) ──
+  let rulesConfig
+  if (argv.rules) {
+    rulesConfig = require("fs").readFileSync(argv.rules, "utf-8")
+    rulesConfig = JSON.parse(rulesConfig)
+    if (rulesConfig.rules) {
+      sf.onRequest.use(middleware.proxyRules(rulesConfig))
+      sf.onConnect.use(middleware.proxyRules(rulesConfig))
+      if (!argv.silent && !argv.quiet) {
+        console.log(`  Loaded ${rulesConfig.rules.length} proxy rule(s) from ${argv.rules}`)
+      }
+    }
+  } else if (argv.upstreamHost || argv.localAddress) {
+    // Simplified single-rule mode
+    const upstream = argv.upstreamHost
+      ? {
+          host: argv.upstreamHost,
+          port: argv.upstreamPort || 3128,
+          ...(argv.upstreamAuth
+            ? {
+                auth: {
+                  user: argv.upstreamAuth.split(":")[0],
+                  pass: argv.upstreamAuth.split(":")[1] || "",
+                },
+              }
+            : {}),
+        }
+      : undefined
+
+    rulesConfig = {
+      rules: [
+        {
+          match: "*",
+          localAddress: argv.localAddress,
+          upstream,
+        },
+      ],
+    }
+    sf.onRequest.use(middleware.proxyRules(rulesConfig))
+    sf.onConnect.use(middleware.proxyRules(rulesConfig))
+    if (!argv.silent && !argv.quiet) {
+      const parts = []
+      if (upstream) parts.push(`upstream=${upstream.host}:${upstream.port}`)
+      if (argv.localAddress) parts.push(`localAddress=${argv.localAddress}`)
+      console.log(`  Unified rule: ${parts.join(", ") || "direct"}`)
+    }
   }
 
   if (argv.auth && !argv.dynamicAuth) {
