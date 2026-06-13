@@ -20,7 +20,7 @@
 ### 测试
 
 - [x] 完整测试套件 (32 tests, 2 skipped) — commit `e8c14e9`
-- [x] 压力测试：60s / 64 并发 / 140 RPS / 零内存泄漏
+- [x] 压力测试：60s / 64 并发 / 43 RPS / 零内存泄漏（~3% 失败率，因 httpbin.org 限流）
 
 ### 统一配置文件 (proxyRules) ✅
 
