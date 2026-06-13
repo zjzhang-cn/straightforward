@@ -394,7 +394,229 @@ interface RoutingRule {
 
 ---
 
-### 功能三：IP 访问控制 (ACL Middleware)
+---
+
+### 功能四：统一配置文件 (Unified Rules Config)
+
+将**出口 IP 绑定**、**二级代理**、**域名路由分发**三个能力合并为一个统一的配置文件规则系统，用 **proxyrules.json** 驱动整个代理行为。
+
+#### 为什么合并？
+
+单个规则文件解决三个独立中间件无法回答的问题：**"指定域名 → 指定出口 IP → 经过指定上游代理 → 到达目标"** 这条链路需要一条规则同时携带 `match` + `localAddress` + `upstream`，而不是三个中间件各自独立判断。
+
+#### 规则数据结构
+
+```jsonc
+// proxyrules.json — 一条规则同时控制：路由、出口 IP、上游代理
+{
+  "rules": [
+    {
+      // ── 匹配条件 ──
+      "match": "*.internal.corp",
+
+      // ── 出口 IP 绑定 ──
+      "localAddress": "10.0.0.1",
+
+      // ── 上游代理 ──
+      "upstream": {
+        "host": "corp-proxy.internal",
+        "port": 3128,
+        "auth": { "user": "agent", "pass": "s3cret" }
+      }
+    },
+    {
+      "match": "*.aws.amazonaws.com",
+      "localAddress": "10.0.1.1",
+      "upstream": null          // null = 直连，不走上游代理
+    },
+    {
+      "match": "*.google.com",
+      "localAddress": "10.0.2.1",
+      "upstream": {
+        "host": "us-proxy.example.com",
+        "port": 8080
+      }
+    },
+    {
+      "match": "*",
+      "localAddress": "0.0.0.0",
+      "upstream": null
+    }
+  ],
+  "default": {
+    "localAddress": "0.0.0.0",
+    "upstream": null
+  }
+}
+```
+
+**TypeScript 类型**：
+
+```ts
+interface ProxyRule {
+  /** Glob pattern matching target hostname */
+  match: string
+  /** Source IP to bind outgoing connection to. "0.0.0.0" = OS default */
+  localAddress?: string
+  /** Upstream proxy to route through. null | undefined = direct connect */
+  upstream?: {
+    host: string
+    port: number
+    auth?: { user: string; pass: string }
+  } | null
+}
+
+interface ProxyRulesConfig {
+  rules: ProxyRule[]
+  /** Fallback when no rule matches */
+  default?: {
+    localAddress?: string
+    upstream?: ProxyRule["upstream"]
+  }
+}
+```
+
+**第一条匹配规则生效**。每条规则只定义自己关心的字段，未定义字段继承 `default`。
+
+#### CLI 使用
+
+```bash
+# JSON 配置文件
+straightforward --rules ./proxyrules.json
+
+# YAML 也可以（如果后续支持，parser 零依赖）
+straightforward --rules ./proxyrules.yaml
+```
+
+#### 程序化使用
+
+```ts
+import { Straightforward, proxyRules } from "straightforward"
+import rules from "./proxyrules.json" assert { type: "json" }
+
+const sf = new Straightforward()
+sf.onRequest.use(proxyRules({ rules: rules.rules }))
+sf.onConnect.use(proxyRules({ rules: rules.rules }))
+await sf.listen(8081)
+```
+
+#### 中间件行为：`proxyRules`
+
+单个中间件，同时写入三个 `req.locals` 字段：
+
+```ts
+// proxyRules 中间件内部
+for (const rule of rules) {
+  if (globMatch(targetHost, rule.match)) {
+    ctx.req.locals.upstream = rule.upstream || null
+    ctx.req.locals.localAddress = rule.localAddress || "0.0.0.0"
+    return next()
+  }
+}
+// fallback: use default
+ctx.req.locals.upstream = config.default?.upstream ?? null
+ctx.req.locals.localAddress = config.default?.localAddress ?? "0.0.0.0"
+return next()
+```
+
+然后 `_proxyRequest` 和 `_proxyConnect` 内部读取这两个值，无需感知路由逻辑。
+
+#### 核心改动：Straightforward.ts 路由感知
+
+```diff
+ // _proxyRequest — 读取路由结果
++const upstream = req.locals.upstream
++const localAddr = req.locals.localAddress
+
++if (upstream) {
++  // 走上游代理逻辑：HTTP request → upstream → target
++  return this._proxyViaUpstream(req, res, upstream, localAddr)
++}
++// 直连逻辑（现有代码）
+ const proxyReq = http.request({
+   method: req.method,
+   headers,
+   agent: this.#httpAgent,
++  ...(localAddr && localAddr !== "0.0.0.0" ? { localAddress: localAddr } : {}),
+   ...req.locals.urlParts,
+ })
+```
+
+```diff
+ // _proxyConnect — 读取路由结果
++if (req.locals.upstream) {
++  // 通过上游隧道连接
++  return this._proxyConnectViaUpstream(req, clientSocket, head, req.locals.upstream, req.locals.localAddress)
++}
+ // 直连逻辑（现有代码）
+ const serverSocket = net.connect(
+   req.locals.urlParts.port,
+   req.locals.urlParts.host,
++  { localAddress: req.locals.localAddress },
+   () => { ... }
+ )
+```
+
+#### 复杂度
+
+| 组件 | 行数 | 说明 |
+|------|------|------|
+| `src/middleware/proxyRules.ts` | ~40 行 | glob 匹配 + 规则遍历 + 写入 locals |
+| `Straightforward._proxyRequest` | +15 行 | 读取 `req.locals` + 上游代理分支 |
+| `Straightforward._proxyConnect` | +25 行 | 读取 `req.locals` + 上游隧道分支 |
+| `cli.js` | +8 行 | `--rules` 选项 + JSON 读取 |
+| **总计** | **~90 行** | |
+
+#### Glob → Regex 转换（零依赖，~12 行）
+
+```ts
+function globToRegex(glob: string): RegExp {
+  const escaped = glob
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")  // escape regex specials
+    .replace(/\*/g, "[^.]*")                // * matches within a segment
+    .replace(/\\\*\\\*/g, ".*")             // ** crosses dots
+  return new RegExp("^" + escaped + "$", "i")
+}
+// "*.google.com" → /^[^.]+\.google\.com$/i
+// "*.internal.*" → /^[^.]+\.internal\.[^.]+$/i
+// "*"            → /^.*$/i
+```
+
+#### `_proxyViaUpstream` 实现概要
+
+```ts
+private _proxyViaUpstream(req, res, upstream, localAddress) {
+  // 1. 用 HTTP CONNECT 连接到上游代理
+  // 2. 通过上游隧道向目标发起新的 HTTP 请求
+  //    http.request({ ...req.locals.urlParts, agent: upstreamHttpsAgent })
+  // 3. pipe 响应回客户端
+}
+```
+
+#### `_proxyConnectViaUpstream` 实现概要
+
+```ts
+private _proxyConnectViaUpstream(req, clientSocket, head, upstream, localAddress) {
+  // 1. net.connect() 到上游代理
+  // 2. 发送 CONNECT target:port HTTP/1.1 + Proxy-Authorization
+  // 3. 接收上游 200 Connection Established
+  // 4. 转发给客户端 → 建立双向 pipe
+}
+```
+
+#### 配置文件热加载（可选后续）
+
+```ts
+// 监听文件变化，零停机更新规则
+fs.watch("proxyrules.json", () => {
+  const newRules = JSON.parse(fs.readFileSync("proxyrules.json", "utf-8"))
+  proxyRulesMiddleware.reload(newRules.rules)
+})
+```
+
+---
+
+### 功能五：IP 访问控制 (ACL Middleware)
 
 **场景**：基于客户端 IP 允许/拒绝连接。类似防火墙白名单/黑名单。
 
@@ -419,7 +641,7 @@ sf.onConnect.use(middleware.acl({ /* 同上 */ }))
 
 ---
 
-### 功能四：请求/响应头改写 (Header Rewrite Middleware)
+### 功能六：请求/响应头改写 (Header Rewrite Middleware)
 
 **场景**：在转发前添加、删除、修改请求或响应头。常用于：
 - 注入 `X-Forwarded-For` 链
@@ -448,7 +670,7 @@ sf.onRequest.use(middleware.headers({
 
 ---
 
-### 功能五：连接数限制 (Connection Limiting)
+### 功能七：连接数限制 (Connection Limiting)
 
 **场景**：限制每个客户端 IP 的并发连接数，防止单个客户端耗尽资源。
 
@@ -468,7 +690,7 @@ sf.onConnect.use(middleware.connectionLimit({ maxConnectionsPerIP: 4 }))
 
 ---
 
-### 功能六：结构化访问日志 (Structured Logging)
+### 功能八：结构化访问日志 (Structured Logging)
 
 **场景**：以 JSON 格式记录每个代理请求的元数据（客户端 IP、目标、耗时、状态码等），便于接入日志系统（ELK、Loki 等）。
 
@@ -491,7 +713,7 @@ sf.onResponse.use(middleware.accessLog({
 
 ---
 
-### 功能七：集群模式零停机重启 (Graceful Shutdown)
+### 功能九：集群模式零停机重启 (Graceful Shutdown)
 
 **场景**：生产环境中重启代理而不丢弃活跃连接。
 
@@ -516,9 +738,7 @@ sf.gracefulClose({ timeout: 10_000 }) // 10 秒超时后强制关闭
 
 | 功能 | 复杂度 | 价值 | 独立中间件？ | 推荐 |
 |------|--------|------|-------------|------|
-| 出口 IP 绑定 | ~30 行 | 高（多网卡服务器刚需） | 半（核心+中间件） | **最先做** |
-| 二级代理 | ~40 行 | 高（核心场景扩展） | 否（需改核心） | **第二** |
-| 域名路由分发 | ~50 行 | 高（企业场景刚需） | 半（中间件+核心读取） | **第三** |
+| 统一配置文件 (proxyRules) | ~90 行 | 高（合并三个核心能力） | 否（改核心 + 新建中间件） | **最先做** |
 | IP ACL | ~35 行 | 中（安全增强） | 是（纯中间件） | 第四 |
 | Header 改写 | ~40 行 | 中（灵活性强） | 是（纯中间件） | 第五 |
 | 连接数限制 | ~50 行 | 中（防滥用） | 是（纯中间件） | 第六 |
