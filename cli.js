@@ -57,6 +57,14 @@ const argv = yargs
     describe: `Directory containing rule-set .txt files (for geosite: prefix in proxyRules)`,
     type: "string",
   })
+  .option("rules-download", {
+    describe: `Auto-download rule-set files from loyalsoldier/v2ray-rules-dat release (default: gfw,direct-list,proxy-list)`,
+    type: "string",
+  })
+  .option("rules-download-force", {
+    describe: `Force re-download even if rule files already exist locally`,
+    type: "boolean",
+  })
   .option("upstream-host", {
     describe: `Upstream proxy host (when not using --rules)`,
     type: "string",
@@ -111,6 +119,27 @@ async function cli() {
       `)
     })
     sf.on("serverError", (err) => console.error("An error occured.", err))
+  }
+
+  // ── Auto-download rule files (before loading resolver) ──
+  if (argv.rulesDownload || argv.rulesDownloadForce) {
+    if (!argv.rulesDir) {
+      console.error("Error: --rules-download requires --rules-dir to be set")
+      process.exit(1)
+    }
+    const { ruleSet } = require("./dist/index.js")
+    const tags = argv.rulesDownload === true || argv.rulesDownload === ""
+      ? undefined  // use defaults
+      : argv.rulesDownload.split(",").map((s) => s.trim()).filter(Boolean)
+    if (!argv.silent && !argv.quiet) {
+      console.log(`  Downloading rule-set files (${tags?.join(",") || "default"}) from loyalsoldier/v2ray-rules-dat...`)
+    }
+    const result = await ruleSet.downloadRules(argv.rulesDir, tags, !!argv.rulesDownloadForce)
+    if (!argv.silent && !argv.quiet) {
+      if (result.downloaded.length) console.log(`    Downloaded: ${result.downloaded.join(", ")}`)
+      if (result.skipped.length) console.log(`    Skipped (already exist): ${result.skipped.join(", ")}`)
+      if (result.errors.length) result.errors.forEach(e => console.error(`    Error [${e.tag}]: ${e.message}`))
+    }
   }
 
   // ── Rule-set resolver (for geosite: prefix) ──

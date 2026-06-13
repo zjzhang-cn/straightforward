@@ -83,6 +83,22 @@ Usage: download `gfw.txt`, `direct-list.txt`, etc. from [loyalsoldier/v2ray-rule
 
 CLI: `straightforward --rules-dir ./rules/ --rules proxyrules.json`
 
+Auto-download rule files from the latest release:
+```bash
+# Download default set (gfw, direct-list, proxy-list)
+straightforward --rules-dir ./rules/ --rules-download
+
+# Download specific tags
+straightforward --rules-dir ./rules/ --rules-download gfw,apple-cn,google-cn
+
+# Force re-download even if local files exist
+straightforward --rules-dir ./rules/ --rules-download --rules-download-force
+
+# Combine with rules config
+straightforward --rules-dir ./rules/ --rules-download --rules proxyrules.json
+```
+- **`downloader.ts`** — zero-dependency downloader using Node.js built-in `https`. Fetches latest release tag from GitHub API, downloads .txt rule files atomically (temp file → rename). Skips existing files unless `force` is true.
+
 ### CLI (`cli.js`)
 
 Plain JS entry point (not TypeScript). Uses `yargs` to parse options, then instantiates `Straightforward`, wires up auth/echo/proxyRules middleware based on flags, and calls `sf.listen()` or `sf.cluster()`.
