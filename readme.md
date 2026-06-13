@@ -91,16 +91,16 @@ Use with cURL:
 const { Straightforward, middleware } = require("straightforward")
 
 ;(async () => {
-  // Start proxy server
-  const sf = new Straightforward()
-  await sf.listen(9191)
-  console.log(`Proxy listening on http://localhost:9191`)
+  // Start proxy server with optional source IP binding
+  const sf = new Straightforward({
+    localAddress: "10.0.0.1",  // bind outgoing connections to this IP (multi-NIC servers)
+  })
+  await sf.listen(8081, "0.0.0.0")
+  console.log(`Proxy listening on http://0.0.0.0:8081`)
 
   // Log http requests
   sf.onRequest.use(async ({ req, res }, next) => {
     console.log(`http request: ${req.url}`)
-    // Note the common middleware pattern, use `next()`
-    // to pass the request to the next handler.
     return next()
   })
 
@@ -116,6 +116,17 @@ const { Straightforward, middleware } = require("straightforward")
 
   // Use built-in middleware to mock responses for all http requests
   sf.onRequest.use(middleware.echo)
+
+  // ── Unified proxy rules: routing + upstream + source IP ──
+  sf.onRequest.use(middleware.proxyRules({
+    rules: [
+      { match: "*.internal.corp", upstream: { host: "corp-proxy", port: 3128 }, localAddress: "10.0.0.1" },
+      { match: "*.google.com", localAddress: "10.0.2.1" },
+      { match: "*", localAddress: "0.0.0.0" },
+    ],
+    default: { localAddress: "0.0.0.0" },
+  }))
+  sf.onConnect.use(middleware.proxyRules({ /* same rules */ }))
 })()
 ```
 
