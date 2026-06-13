@@ -84,6 +84,16 @@ Test files:
 - EditorConfig enforces UTF-8, LF line endings
 - Node.js `debug` module with namespace `straightforward` — enable via `DEBUG=straightforward`
 
+## Performance
+
+| Optimization | Effect |
+|---|---|
+| TCP_NODELAY on CONNECT sockets | Eliminates ~40ms Nagle-algorithm delay per packet |
+| HTTP Keep-Alive Agent (`#httpAgent`) | Reuses upstream TCP+TLS connections, 5-10x throughput gain |
+| Hop-by-hop header stripping | Removes `Connection`, `Proxy-Authorization`, `Transfer-Encoding`, etc. before forwarding — prevents connection misrouting |
+
+Stress test: `node --expose-gc -r esbuild-register test/stress.ts` (60s, 64 concurrent, httpbin.org).
+
 ## Node.js SEA (standalone executable)
 
 `sea-config.json` defines the SEA build. The output is `dist/straightforward` — a self-contained ~131MB binary that runs without Node.js installed.
