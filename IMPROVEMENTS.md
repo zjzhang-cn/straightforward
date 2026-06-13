@@ -39,6 +39,12 @@
 - [x] **Auth: user/pass 校验修复** — commit `d708cbd`
 - [x] **CLI: DEBUG env 拼接修复** — commit `d708cbd`
 
+### IP ACL (访问控制) ✅
+
+- [x] **ACL 设计文档** (`docs/IP-ACL-DESIGN.md`) — commit `423d9da`
+- [x] **ACL 中间件** (`src/middleware/acl.ts`): 白名单/黑名单、IPv4/IPv6 CIDR 匹配，零外部依赖 — commit `a8b19ea`
+- [x] **ACL 单元测试** (18 tests): 精确匹配、CIDR、IPv6、CONNECT、优先级 — commit `854a04f`
+
 ---
 
 ## 待改进
@@ -1128,7 +1134,7 @@ sf.gracefulClose({ timeout: 10_000 }) // 10 秒超时后强制关闭
 | 出口 IP 绑定 | — | — | — | **合并入 proxyRules** |
 | 二级代理 | — | — | — | **合并入 proxyRules** |
 | 域名路由分发 | — | — | — | **合并入 proxyRules** |
-| IP ACL | ~35 行 | 中（安全增强） | 是（纯中间件） | 第四 |
+| IP ACL | ~170 行 | 中（安全增强） | 是（纯中间件） | **已完成** ✅ |
 | Header 改写 | ~40 行 | 中（灵活性强） | 是（纯中间件） | 第五 |
 | 连接数限制 | ~50 行 | 中（防滥用） | 是（纯中间件） | 第六 |
 | 结构化日志 | ~30 行 | 低（debug 已够用） | 是（纯中间件） | 第七 |
