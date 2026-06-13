@@ -50,6 +50,9 @@
 # Build for windows
 ❯❯❯ npm run build     
 ❯❯❯ npx pkg . --targets node18-win-x64 --output dist/straightforward.exe
+# Build standalone executable (Node.js SEA, requires static Node binary):
+❯❯❯ npm run build:sea
+❯❯❯ ./dist/straightforward
 ```
 
 ## Usage (cli)
