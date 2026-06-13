@@ -24,11 +24,20 @@
 
 ### 统一配置文件 (proxyRules) ✅
 
-- [x] **proxyRules 中间件** (`src/middleware/proxyRules.ts`): glob 匹配 + 规则遍历 + 写入 `req.locals.upstream` / `req.locals.localAddress` — commit `857fc5c`
-- [x] **核心路由感知** (`Straightforward.ts`): `_proxyRequest` 读取 `req.locals.upstream` 走 `_proxyRequestViaUpstream`，`_proxyConnect` 读取后走 `_proxyConnectViaUpstream`；`localAddress` 在所有出站连接中生效 — commit `857fc5c`
-- [x] **CLI 三层配置** (`cli.js`): `--rules` 文件 / `--upstream-*` 简化模式 / 零配置默认直连 — commit `746e121`
-- [x] **proxyRules 单元测试** (11 tests): glob 匹配、type 过滤、规则顺序、默认值、upstream 传播、异常处理 — commit `a21601e`
+- [x] **proxyRules 中间件** — commit `857fc5c`
+- [x] **核心路由感知** (`_proxyRequest` / `_proxyConnect`) — commit `857fc5c`
+- [x] **CLI 三层配置** (`--rules` / `--upstream-*` / 零配置) — commit `746e121`
+- [x] **proxyRules 单元测试** (11 tests) — commit `a21601e`
 - [x] **CLAUDE.md 更新** — commit `ba7f276`
+- [x] **全局 localAddress** (`Straightforward({ localAddress })`) — commit `09d9ea9`
+- [x] **CLI `--local-address` 透传** — commit `76b6757`
+- [x] **README 更新** (proxyRules + localAddress 示例) — commit `55c65a5`
+
+### 安全 & 兼容性 ✅
+
+- [x] **Auth: Basic 认证大小写不敏感** — commit `d708cbd`
+- [x] **Auth: user/pass 校验修复** — commit `d708cbd`
+- [x] **CLI: DEBUG env 拼接修复** — commit `d708cbd`
 
 ---
 
