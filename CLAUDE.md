@@ -114,4 +114,6 @@ Build process:
 2. `node --build-sea=sea-config.json` — injects the bundle into a copy of the Node binary
 3. `codesign --sign - dist/straightforward` — ad-hoc sign for macOS
 
+## 交互规律
+
 - 每次完成我交给你的任务后, 你都要通知我说爸爸工作完成了
