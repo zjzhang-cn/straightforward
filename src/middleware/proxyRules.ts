@@ -1,4 +1,5 @@
 import { Middleware, RequestContext, ConnectContext, isConnect } from ".."
+import { RuleSetResolver } from "../rule-set"
 
 import Debug from "debug"
 const debug = Debug("straightforward:middleware")
@@ -14,7 +15,7 @@ export interface UpstreamProxy {
 }
 
 export interface ProxyRule {
-  /** Glob pattern matching the target hostname */
+  /** Match pattern: glob ("*.google.com"), geosite:tag ("geosite:gfw"), or geoip:tag ("geoip:cn") */
   match: string
   /** Only match this request type. Omit = both http and connect. */
   type?: "http" | "connect"
@@ -30,6 +31,8 @@ export interface ProxyRulesConfig {
     localAddress?: string
     upstream?: UpstreamProxy
   }
+  /** Rule-set resolver for geosite: prefix matching. */
+  ruleSets?: RuleSetResolver
 }
 
 export interface RequestAdditionsProxyRules {
@@ -73,14 +76,23 @@ function globToRegex(glob: string): RegExp {
 function matchRule(
   hostname: string,
   rule: ProxyRule,
-  isConnectType: boolean
+  isConnectType: boolean,
+  ruleSets?: RuleSetResolver
 ): boolean {
   // type filter
   if (rule.type === "http" && isConnectType) return false
   if (rule.type === "connect" && !isConnectType) return false
 
-  // glob match
-  return globToRegex(rule.match).test(hostname)
+  const match = rule.match
+
+  // ── geosite: prefix → rule-set matching ──
+  if (match.startsWith("geosite:") && ruleSets) {
+    const tag = match.slice("geosite:".length)
+    return ruleSets.match(tag, hostname)
+  }
+
+  // ── glob matching (existing behavior) ──
+  return (rule as any)._regex.test(hostname)
 }
 
 // ============================================================
@@ -98,15 +110,21 @@ export const proxyRules = (
 ): Middleware<
   RequestContext<RequestAdditionsProxyRules> | ConnectContext<RequestAdditionsProxyRules>
 > => {
-  const { rules, default: def } = config
+  const { rules, default: def, ruleSets } = config
 
   // Validate rules at construction time
   for (const rule of rules) {
     if (!rule.match) {
       throw new Error("proxyRules: each rule must have a 'match' field")
     }
-    // Pre-compile regexes for performance
-    ;(rule as any)._regex = globToRegex(rule.match)
+    // Pre-compile regexes for glob rules (skip geosite: / geoip: rules)
+    if (!rule.match.startsWith("geosite:") && !rule.match.startsWith("geoip:")) {
+      ;(rule as any)._regex = globToRegex(rule.match)
+    }
+    // For rule-set rules, store a regex sentinel so matchRule doesn't crash
+    if (!(rule as any)._regex) {
+      ;(rule as any)._regex = /^$/ // never matches via glob, falls through to rule-set logic
+    }
   }
 
   return async (ctx, next) => {
@@ -119,7 +137,7 @@ export const proxyRules = (
     const isConnectType = isConnect(ctx)
 
     for (const rule of rules) {
-      if (matchRule(hostname, rule, isConnectType)) {
+      if (matchRule(hostname, rule, isConnectType, ruleSets)) {
         debug(`proxyRules: matched "${rule.match}" → host=${hostname} type=${isConnectType ? "connect" : "http"}`)
 
         ctx.req.locals.upstream = rule.upstream

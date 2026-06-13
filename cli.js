@@ -53,6 +53,10 @@ const argv = yargs
     describe: `Path to proxyrules.json config file`,
     type: "string",
   })
+  .option("rules-dir", {
+    describe: `Directory containing rule-set .txt files (for geosite: prefix in proxyRules)`,
+    type: "string",
+  })
   .option("upstream-host", {
     describe: `Upstream proxy host (when not using --rules)`,
     type: "string",
@@ -109,12 +113,23 @@ async function cli() {
     sf.on("serverError", (err) => console.error("An error occured.", err))
   }
 
+  // ── Rule-set resolver (for geosite: prefix) ──
+  let ruleSets
+  if (argv.rulesDir) {
+    const { ruleSet } = require("./dist/index.js")
+    ruleSets = ruleSet.createRuleSetResolver(argv.rulesDir)
+    if (!argv.silent && !argv.quiet) {
+      console.log(`  Rule-set dir: ${argv.rulesDir} (${ruleSets.tags().length} tags loaded)`)
+    }
+  }
+
   // ── Proxy rules (unified config: upstream + localAddress + routing) ──
   let rulesConfig
   if (argv.rules) {
     rulesConfig = require("fs").readFileSync(argv.rules, "utf-8")
     rulesConfig = JSON.parse(rulesConfig)
     if (rulesConfig.rules) {
+      if (ruleSets) rulesConfig.ruleSets = ruleSets
       sf.onRequest.use(middleware.proxyRules(rulesConfig))
       sf.onConnect.use(middleware.proxyRules(rulesConfig))
       if (!argv.silent && !argv.quiet) {
@@ -147,6 +162,7 @@ async function cli() {
         },
       ],
     }
+    if (ruleSets) rulesConfig.ruleSets = ruleSets
     sf.onRequest.use(middleware.proxyRules(rulesConfig))
     sf.onConnect.use(middleware.proxyRules(rulesConfig))
     if (!argv.silent && !argv.quiet) {
