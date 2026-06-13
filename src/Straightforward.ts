@@ -235,6 +235,9 @@ export class Straightforward extends EventEmitter {
       req.locals.urlParts.port,
       req.locals.urlParts.host,
       () => {
+        ;(serverSocket as net.Socket).setNoDelay(true)
+        ;(clientSocket as net.Socket).setNoDelay(true)
+
         clientSocket.write(
           "HTTP/1.1 200 Connection Established\r\n" +
             "Proxy-agent: straightforward\r\n" +
