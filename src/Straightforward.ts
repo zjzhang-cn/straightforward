@@ -18,7 +18,12 @@ import Debug from "debug"
 const debug = Debug("straightforward")
 
 export interface StraightforwardOptions {
+  /** @deprecated Use connectTimeout + readTimeout instead. Mapped to both for backward compatibility. Default: 60s */
   requestTimeout: number
+  /** TCP connection establishment timeout (ms). Default: 10s */
+  connectTimeout?: number
+  /** Socket idle read timeout (ms). Resets on each data event. Default: 30s */
+  readTimeout?: number
   /** Global source IP to bind for all outbound connections (multi-NIC servers). Overridden by per-rule localAddress from proxyRules. */
   localAddress?: string
   /** Global default DNS server for all outbound connections. Overridden by per-rule dns from proxyRules. */
@@ -101,6 +106,14 @@ export class Straightforward extends EventEmitter {
     this.opts = {
       requestTimeout: opts.requestTimeout || 60 * 1000, // 60s
     }
+
+    // Fine-grained timeout defaults. connectTimeout / readTimeout take priority
+    // over the legacy requestTimeout. If neither is set, fall back to requestTimeout
+    // for backward compatibility.
+    this.#connectTimeout =
+      opts.connectTimeout ?? opts.requestTimeout ?? 10_000
+    this.#readTimeout =
+      opts.readTimeout ?? opts.requestTimeout ?? 30_000
 
     // When localAddress is set on the instance, all outbound connections
     // (both direct and via upstream) bind to this source IP.
@@ -222,6 +235,12 @@ export class Straightforward extends EventEmitter {
       return this._proxyRequestViaUpstream(req, res, upstream, localAddr, headers)
     }
 
+    // Connect timeout: manually track since http.request doesn't expose it
+    const connectTimer = setTimeout(() => {
+      debug("proxyReq: connect timeout (%dms)", this.#connectTimeout)
+      proxyReq.destroy(new Error("Connect timeout"))
+    }, this.#connectTimeout)
+
     // https://nodejs.org/api/http.html#http_http_request_options_callback
     const proxyReq = http.request({
       method: req.method,
@@ -245,8 +264,9 @@ export class Straightforward extends EventEmitter {
     proxyReq.on("response", (proxyRes) => this._onResponse(req, res, proxyRes))
 
     proxyReq.on("socket", (socket) => {
-      socket.setTimeout(this.opts.requestTimeout, () => {
-        debug("proxyReq: onTimeout", this.opts.requestTimeout)
+      clearTimeout(connectTimer)
+      socket.setTimeout(this.#readTimeout, () => {
+        debug("proxyReq: read timeout (%dms)", this.#readTimeout)
         proxyReq.destroy()
       })
       if (req.destroyed) {
@@ -289,6 +309,11 @@ export class Straightforward extends EventEmitter {
     const dnsServer = req.locals.dns ?? this.#globalDns
     const lookup = dnsServer ? createLookupFunction(dnsServer) : undefined
 
+    const connectTimer = setTimeout(() => {
+      debug("proxyReqUpstream: connect timeout (%dms)", this.#connectTimeout)
+      proxyReq.destroy(new Error("Connect timeout"))
+    }, this.#connectTimeout)
+
     const proxyReq = http.request({
       method: req.method,
       host: upstream.host,
@@ -314,8 +339,9 @@ export class Straightforward extends EventEmitter {
     proxyReq.on("response", (proxyRes) => this._onResponse(req, res, proxyRes))
 
     proxyReq.on("socket", (socket) => {
-      socket.setTimeout(this.opts.requestTimeout, () => {
-        debug("proxyReqUpstream: onTimeout", this.opts.requestTimeout)
+      clearTimeout(connectTimer)
+      socket.setTimeout(this.#readTimeout, () => {
+        debug("proxyReqUpstream: read timeout (%dms)", this.#readTimeout)
         proxyReq.destroy()
       })
       if (req.destroyed) {
@@ -335,6 +361,12 @@ export class Straightforward extends EventEmitter {
 
   /** DNS server to use for all outbound connections when no per-rule override */
   #globalDns: string | undefined
+
+  /** TCP connection establishment timeout (ms) */
+  #connectTimeout: number
+
+  /** Socket idle read timeout (ms) */
+  #readTimeout: number
 
   private async _onResponse(
     req: Request,
@@ -418,9 +450,20 @@ export class Straightforward extends EventEmitter {
       connectOpts.lookup = lookup
     }
 
+    const connectTimer = setTimeout(() => {
+      debug("proxyConnect: connect timeout (%dms)", this.#connectTimeout)
+      serverSocket.destroy(new Error("Connect timeout"))
+    }, this.#connectTimeout)
+
     const serverSocket = net.connect(connectOpts, () => {
+        clearTimeout(connectTimer)
         ;(serverSocket as net.Socket).setNoDelay(true)
         ;(clientSocket as net.Socket).setNoDelay(true)
+
+        ;(serverSocket as net.Socket).setTimeout(this.#readTimeout, () => {
+          debug("proxyConnect: read timeout (%dms)", this.#readTimeout)
+          serverSocket.destroy()
+        })
 
         clientSocket.write(
           "HTTP/1.1 200 Connection Established\r\n" +
@@ -441,6 +484,7 @@ export class Straightforward extends EventEmitter {
     )
 
     serverSocket.on("error", (err) => {
+      clearTimeout(connectTimer)
       debug("serverSocket error", err)
       if (clientSocket.writable && !clientSocket.destroyed) {
         clientSocket.end(
@@ -484,9 +528,20 @@ export class Straightforward extends EventEmitter {
 
     debug("proxyConnectViaUpstream: connecting to upstream %s:%s (bind=%s, dns=%s)", upstream.host, upstream.port, localAddr || "OS default", dnsServer || "OS default")
 
+    const connectTimer = setTimeout(() => {
+      debug("proxyConnectViaUpstream: connect timeout (%dms)", this.#connectTimeout)
+      upstreamSocket.destroy(new Error("Connect timeout"))
+    }, this.#connectTimeout)
+
     const upstreamSocket = net.connect(connectOpts, () => {
+      clearTimeout(connectTimer)
       ;(upstreamSocket as net.Socket).setNoDelay(true)
       ;(clientSocket as net.Socket).setNoDelay(true)
+
+      ;(upstreamSocket as net.Socket).setTimeout(this.#readTimeout, () => {
+        debug("proxyConnectViaUpstream: read timeout (%dms)", this.#readTimeout)
+        upstreamSocket.destroy()
+      })
 
       // Build CONNECT request to upstream
       let connectReq = `CONNECT ${req.locals.urlParts.host}:${req.locals.urlParts.port} HTTP/1.1\r\n`
@@ -560,6 +615,7 @@ export class Straightforward extends EventEmitter {
     })
 
     upstreamSocket.on("error", (err) => {
+      clearTimeout(connectTimer)
       debug("upstreamSocket error", err)
       if (clientSocket.writable && !clientSocket.destroyed) {
         clientSocket.end(
