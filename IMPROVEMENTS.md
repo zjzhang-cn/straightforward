@@ -61,6 +61,16 @@
 - [x] **`--show-domains <tag>`** — 列出标签下的域名 — `cf225a3`
 - [x] **DomainTrie.list()** — 遍历 trie 域名 — `cf225a3`
 
+### 按规则指定 DNS 服务器 ✅
+
+详见 [docs/completed/dns-per-rule.md](docs/completed/dns-per-rule.md)
+
+- [x] **DNS Resolver 工厂** (`src/dns-resolver.ts`): 使用 `dns.promises.Resolver` 实例级 DNS，FIFO 缓存 — `54779f7`
+- [x] **proxyRules 集成**: ProxyRule/Config/Locals 新增 `dns` 字段 — `54779f7`
+- [x] **核心注入**: 4 个代理方法向 `http.request()`/`net.connect()` 注入 `lookup` — `54779f7`
+- [x] **CLI `--dns`**: 全局 DNS 服务器选项 — `54779f7`
+- [x] **单元测试** (12 tests): DNS resolver 工厂 + proxyRules 传播 — `54779f7`
+
 ### 测试 ✅
 
 详见 [docs/completed/testing.md](docs/completed/testing.md)
