@@ -6,106 +6,138 @@ const pkg = require("./package.json")
 
 const argv = yargs
   // @ts-ignore
-  .usage("Usage: $0 --port 9191 [options]")
+  .usage("Usage: $0 [options]\n\nstraightforward — 极简 Node.js 正向代理服务器")
   .option("port", {
     alias: "p",
     default: 8081,
-    describe: `Port to bind on`,
+    describe: `监听端口`,
     type: "number",
+    group: "服务器:",
   })
   .option("host", {
     default: "0.0.0.0",
-    describe: `Host/interface to bind on`,
+    describe: `监听地址/接口 (默认: 0.0.0.0)`,
     type: "string",
+    group: "服务器:",
   })
   .option("auth", {
     alias: "a",
-    describe: `Enable proxy authentication`,
+    describe: `代理认证 (格式: user:pass)`,
     type: "string",
+    group: "认证:",
   })
   .option("dynamic-auth", {
-    // alias: "a",
-    describe: `Enable proxy authentication with no validation`,
+    describe: `动态认证模式 (不校验 user:pass)`,
     type: "boolean",
+    group: "认证:",
   })
-  .example('$0 --auth "user:pass"', "Require authentication")
   .option("echo", {
     alias: "e",
-    describe: `Enable echo mode (mock all http responses)`,
+    describe: `回显模式 (mock 所有 HTTP 响应)`,
     type: "boolean",
+    group: "模式:",
   })
-  .example("$0 --echo", "Mock responses for all http requests")
   .option("debug", {
     alias: "d",
-    describe: `Enabled debug output`,
+    describe: `调试模式 (显示详细连接线路信息)`,
     type: "boolean",
+    group: "模式:",
   })
   .option("cluster", {
     alias: "c",
-    describe: `Run a cluster of proxies (using number of CPUs)`,
+    describe: `集群模式 (按 CPU 核心数)`,
     type: "boolean",
+    group: "模式:",
   })
   .option("cluster-count", {
-    describe: `Specify how many cluster workers to spawn`,
+    describe: `指定集群 worker 数量`,
     type: "number",
+    group: "模式:",
   })
   .option("rules", {
-    describe: `Path to proxyrules.json config file`,
+    describe: `代理规则配置文件路径`,
     type: "string",
+    group: "规则:",
   })
   .option("rules-dir", {
-    describe: `Directory containing rule-set .txt files (for geosite: prefix in proxyRules)`,
+    describe: `规则集目录 (用于 geosite: 前缀)`,
     type: "string",
+    group: "规则:",
   })
   .option("rules-download", {
-    describe: `Auto-download rule-set files from loyalsoldier/v2ray-rules-dat release (default: gfw,direct-list,proxy-list)`,
+    describe: `下载 .txt 规则文件 (默认: gfw,direct-list,proxy-list)`,
     type: "string",
+    group: "规则:",
   })
   .option("rules-download-force", {
-    describe: `Force re-download even if rule files already exist locally`,
+    describe: `强制重新下载规则文件`,
     type: "boolean",
+    group: "规则:",
   })
   .option("rules-download-dat", {
-    describe: `Download geosite.dat (binary format with all tags in one file)`,
+    describe: `下载 geosite.dat 二进制文件 (1503 标签)`,
     type: "boolean",
+    group: "规则:",
   })
   .option("show-tags", {
-    describe: `List all tags in geosite.dat (optional: filter string, e.g. --show-tags cn)`,
+    describe: `查看 geosite.dat 标签列表 (可选: 过滤词)`,
     type: "string",
+    group: "规则:",
   })
   .option("show-domains", {
-    describe: `Show domains for a specific tag (e.g. --show-domains gfw)`,
+    describe: `查看指定标签的域名列表`,
     type: "string",
+    group: "规则:",
   })
   .option("upstream-host", {
-    describe: `Upstream proxy host (when not using --rules)`,
+    describe: `上游代理主机 (配合 --rules 或单独使用)`,
     type: "string",
+    group: "上游代理:",
   })
   .option("upstream-port", {
-    describe: `Upstream proxy port (when not using --rules)`,
+    describe: `上游代理端口`,
     type: "number",
     default: 3128,
+    group: "上游代理:",
   })
   .option("upstream-auth", {
-    describe: `Upstream proxy auth "user:pass" (when not using --rules)`,
+    describe: `上游代理认证 (格式: user:pass)`,
     type: "string",
+    group: "上游代理:",
   })
   .option("local-address", {
-    describe: `Source IP address to bind outgoing connections to`,
+    describe: `出口源 IP 地址 (多网卡选择出口)`,
     type: "string",
+    group: "网络:",
   })
   .option("quiet", {
     alias: "q",
-    describe: `Suppress request logs`,
+    describe: `静默请求日志`,
     type: "boolean",
+    group: "输出:",
   })
   .option("silent", {
     alias: "s",
-    describe: `Don't print anything to stdout`,
+    describe: `完全不输出到 stdout`,
     type: "boolean",
+    group: "输出:",
   })
   .help("h")
   .alias("h", "help")
+  // @ts-ignore
+  .group(["help", "version"], "其他:")
+  .example([
+    ["$0 --port 8081", "基本代理 (HTTP + HTTPS)"],
+    ['$0 --port 8081 --auth "user:pass"', "带认证的代理"],
+    ["$0 --port 8081 --upstream-host proxy.example.com", "所有流量走上游代理"],
+    ["$0 --rules-dir ./rules/ --rules rules.json", "使用配置文件分流"],
+    ["$0 --rules-dir ./rules/ --rules-download-dat", "下载 geosite.dat"],
+    ["$0 --rules-dir ./rules/ --show-tags", "查看所有可用标签"],
+    ["$0 --rules-dir ./rules/ --show-domains gfw", "查看 gfw 标签的域名"],
+    ["$0 --port 8081 --local-address 10.0.0.1", "绑定出口 IP"],
+    ["$0 --port 8081 --debug", "调试模式 (显示连接线路)"],
+    ["$0 --port 8081 --cluster", "集群模式"],
+  ])
   .epilog(`Report issues at ${pkg.bugs.url}`).argv
 
 if (argv.debug) {
