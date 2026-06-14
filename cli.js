@@ -161,12 +161,26 @@ if (argv.showTags !== undefined || argv.showDomains) {
   const rulesDir = argv.rulesDir || path.join(__dirname, "rules")
   const datFile = path.join(rulesDir, "geosite.dat")
 
-  if (!fs.existsSync(datFile)) {
+  let buf
+  // Prefer external file, fallback to SEA built-in asset
+  if (fs.existsSync(datFile)) {
+    buf = fs.readFileSync(datFile)
+  } else if (require("node:sea").isSea()) {
+    const asset = require("node:sea").getRawAsset("rules/geosite.dat")
+    if (asset) {
+      buf = Buffer.from(asset)
+      if (!argv.silent && !argv.quiet) {
+        console.log(`  Using SEA built-in geosite.dat (${buf.length} bytes)`)
+      }
+    }
+  }
+
+  if (!buf) {
     console.error(`Error: ${datFile} not found. Use --rules-dir to specify the directory or download it with --rules-download-dat`)
     process.exit(1)
   }
 
-  const map = ruleSet.loadGeositeDat(datFile)
+  const map = ruleSet.parseGeositeDat(buf, path.basename(datFile))
 
   if (argv.showDomains) {
     // Show domains for a specific tag
@@ -299,11 +313,28 @@ async function cli() {
 
   // ── Rule-set resolver (for geosite: prefix) ──
   let ruleSets
-  if (argv.rulesDir) {
+
+  // Read SEA built-in geosite.dat if available
+  let builtinDatBuffer = null
+  if (require("node:sea").isSea()) {
+    const asset = require("node:sea").getRawAsset("rules/geosite.dat")
+    if (asset) {
+      builtinDatBuffer = Buffer.from(asset)
+      if (!argv.silent && !argv.quiet) {
+        console.log(`  SEA built-in geosite.dat loaded (${builtinDatBuffer.length} bytes)`)
+      }
+    }
+  }
+
+  if (argv.rulesDir || builtinDatBuffer) {
     const { ruleSet } = require("./dist/index.js")
-    ruleSets = ruleSet.createRuleSetResolver(argv.rulesDir)
+    ruleSets = ruleSet.createRuleSetResolver(argv.rulesDir, builtinDatBuffer)
     if (!argv.silent && !argv.quiet) {
-      console.log(`  Rule-set dir: ${argv.rulesDir} (${ruleSets.tags().length} tags loaded)`)
+      const tagCount = ruleSets.tags().length
+      const source = builtinDatBuffer
+        ? (argv.rulesDir ? `SEA built-in + ${argv.rulesDir}` : "SEA built-in")
+        : argv.rulesDir
+      console.log(`  Rule-set: ${tagCount} tags loaded from ${source}`)
     }
   }
 

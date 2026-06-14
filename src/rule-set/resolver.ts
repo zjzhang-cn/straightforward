@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from "fs"
 import { resolve, basename, extname } from "path"
 import { DomainTrie } from "./domain-trie"
-import { loadGeositeDat } from "./geosite-dat"
+import { loadGeositeDat, parseGeositeDat } from "./geosite-dat"
 
 import Debug from "debug"
 const debug = Debug("straightforward:rule-set")
@@ -33,10 +33,31 @@ export interface RuleSetResolver {
  * Supports two kinds of tag reference:
  *   1. Named: `geosite:gfw`  → looks up `gfw` in cache
  *   2. Path:  `geosite:./custom.txt` → loads that specific file
+ *
+ * @param rulesDir  Optional directory containing .txt/.dat rule files
+ * @param builtinDatBuffer  Optional Buffer of a built-in geosite.dat (e.g. from SEA asset).
+ *                          Loaded in Phase 0 with lowest priority — external .txt and .dat
+ *                          files in rulesDir will override these tags.
  */
-export function createRuleSetResolver(rulesDir?: string): RuleSetResolver {
+export function createRuleSetResolver(
+  rulesDir?: string,
+  builtinDatBuffer?: Buffer
+): RuleSetResolver {
   // Map<tag, trie>
   const cache = new Map<string, DomainTrie>()
+
+  // Phase 0: Load built-in geosite.dat (lowest priority — overridden by any external file)
+  if (builtinDatBuffer) {
+    try {
+      const tagMap = parseGeositeDat(builtinDatBuffer, "<builtin>")
+      for (const [tag, trie] of tagMap) {
+        cache.set(tag, trie)
+      }
+      debug("rule-set: loaded %d tags from SEA built-in geosite.dat", cache.size)
+    } catch (err: any) {
+      debug("rule-set: failed to load built-in geosite.dat: %s", err.message)
+    }
+  }
 
   // Auto-load all .dat and .txt files from rulesDir
   if (rulesDir) {
@@ -51,11 +72,8 @@ export function createRuleSetResolver(rulesDir?: string): RuleSetResolver {
         try {
           const tagMap = loadGeositeDat(resolve(dir, file))
           for (const [tag, trie] of tagMap) {
-            // Only set if no .txt file has already claimed this tag
-            // (.txt files are loaded in Phase 2 and will override)
-            if (!cache.has(tag)) {
-              cache.set(tag, trie)
-            }
+            // Override built-in or previously loaded .dat tags
+            cache.set(tag, trie)
           }
           debug(`rule-set: loaded %d tags from %s`, tagMap.size, file)
         } catch (err: any) {
@@ -63,7 +81,7 @@ export function createRuleSetResolver(rulesDir?: string): RuleSetResolver {
         }
       }
 
-      // Phase 2: Load .txt files (override .dat tags with same name)
+      // Phase 2: Load .txt files (override .dat tags with same name — highest priority)
       for (const file of files) {
         if (extname(file) !== ".txt") continue
         const tag = basename(file, ".txt")

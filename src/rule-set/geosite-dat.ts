@@ -149,18 +149,19 @@ function parseSite(buf: Buffer, offset: number, end: number): ParsedSite {
 // ============================================================
 
 /**
- * Load a geosite.dat file and return a Map of tag → DomainTrie.
+ * Parse a geosite.dat buffer and return a Map of tag → DomainTrie.
  *
  * Each "site" (code) in the .dat file becomes a separate trie.
  * Domain types:
  *   - Full (3): exact match via insertFull()
  *   - Domain (2): suffix match via insert()
  *   - Plain (0), Regex (1): skipped
+ *
+ * @param buf  Binary geosite.dat content
+ * @param name Human-readable source name for debug logging (e.g. filename or "<builtin>")
  */
-export function loadGeositeDat(filePath: string): Map<string, DomainTrie> {
-  const buf = readFileSync(filePath)
+export function parseGeositeDat(buf: Buffer, name: string): Map<string, DomainTrie> {
   const result = new Map<string, DomainTrie>()
-  const fname = basename(filePath)
 
   let offset = 0
   let siteCount = 0
@@ -203,7 +204,7 @@ export function loadGeositeDat(filePath: string): Map<string, DomainTrie> {
         `geosite.dat: loaded tag "%s" (%d domains) from %s`,
         tag,
         trieDomainCount,
-        fname
+        name
       )
     } else {
       offset = skipField(buf, offset, wireType)
@@ -214,9 +215,19 @@ export function loadGeositeDat(filePath: string): Map<string, DomainTrie> {
     `geosite.dat: parsed %d sites, %d domains from %s (%d bytes)`,
     siteCount,
     domainCount,
-    fname,
+    name,
     buf.length
   )
 
   return result
+}
+
+/**
+ * Load a geosite.dat file and return a Map of tag → DomainTrie.
+ *
+ * Convenience wrapper around parseGeositeDat() for file-based usage.
+ */
+export function loadGeositeDat(filePath: string): Map<string, DomainTrie> {
+  const buf = readFileSync(filePath)
+  return parseGeositeDat(buf, basename(filePath))
 }
