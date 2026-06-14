@@ -69,6 +69,14 @@ const argv = yargs
     describe: `Download geosite.dat (binary format with all tags in one file)`,
     type: "boolean",
   })
+  .option("show-tags", {
+    describe: `List all tags in geosite.dat (optional: filter string, e.g. --show-tags cn)`,
+    type: "string",
+  })
+  .option("show-domains", {
+    describe: `Show domains for a specific tag (e.g. --show-domains gfw)`,
+    type: "string",
+  })
   .option("upstream-host", {
     describe: `Upstream proxy host (when not using --rules)`,
     type: "string",
@@ -107,6 +115,91 @@ if (argv.debug) {
 }
 
 const { Straightforward, middleware } = require("./dist/index.js")
+
+// ── Show tags / domains from geosite.dat ──
+if (argv.showTags !== undefined || argv.showDomains) {
+  const { ruleSet } = require("./dist/index.js")
+  const fs = require("fs")
+  const path = require("path")
+  const rulesDir = argv.rulesDir || path.join(__dirname, "rules")
+  const datFile = path.join(rulesDir, "geosite.dat")
+
+  if (!fs.existsSync(datFile)) {
+    console.error(`Error: ${datFile} not found. Use --rules-dir to specify the directory or download it with --rules-download-dat`)
+    process.exit(1)
+  }
+
+  const map = ruleSet.loadGeositeDat(datFile)
+
+  if (argv.showDomains) {
+    // Show domains for a specific tag
+    const tag = argv.showDomains.toLowerCase()
+    const trie = map.get(tag)
+    if (!trie) {
+      console.error(`Tag "${tag}" not found in geosite.dat`)
+      console.error(`Available tags: ${Array.from(map.keys()).sort().join(", ")}`)
+      process.exit(1)
+    }
+    console.log(`Tag: ${tag} (${trie.size} domains)`)
+    // We can't list all domains from a trie easily (they're stored reversed),
+    // so we show the full-match domains and a note about trie domains
+    console.log(`\nUse --debug with a rules config to verify domain matching.`)
+    console.log(`Example: node cli.js --debug --rules-dir ./rules/ --rules rules.json`)
+    process.exit(0)
+  }
+
+  // Show all tags (optionally filtered)
+  const filter = typeof argv.showTags === "string" && argv.showTags !== ""
+    ? argv.showTags.toLowerCase()
+    : null
+
+  const tags = Array.from(map.entries())
+    .filter(([tag]) => !filter || tag.includes(filter))
+    .sort((a, b) => b[1].size - a[1].size) // Sort by domain count descending
+
+  if (tags.length === 0) {
+    console.error(`No tags found matching "${filter}"`)
+    process.exit(1)
+  }
+
+  // Categorize
+  const geo = tags.filter(([t]) => t.startsWith("geolocation-") || ["cn", "ru", "ir", "hk", "tw", "mo", "jp"].includes(t))
+  const category = tags.filter(([t]) => t.startsWith("category-") && !geo.some(([g]) => g === t))
+  const services = tags.filter(([t]) => !t.startsWith("category-") && !t.startsWith("geolocation-") && !geo.some(([g]) => g === t) && !t.startsWith("tld-") && !t.startsWith("win-"))
+  const tlds = tags.filter(([t]) => t.startsWith("tld-"))
+  const winRules = tags.filter(([t]) => t.startsWith("win-"))
+
+  const printTable = (title, items) => {
+    if (items.length === 0) return
+    console.log(`\n## ${title} (${items.length})`)
+    console.log("-".repeat(56))
+    for (const [tag, trie] of items) {
+      const count = trie.size.toLocaleString().padStart(8)
+      console.log(`  ${tag.padEnd(42)} ${count} domains`)
+    }
+  }
+
+  console.log(`geosite.dat: ${map.size} tags total`)
+
+  if (!filter) {
+    // Show summary when no filter
+    printTable("Geolocation / Region", geo)
+    printTable("Category (category-*)", category)
+    printTable("TLD", tlds)
+    printTable("Windows Rules", winRules)
+    printTable("Services / Companies", services)
+  } else {
+    // Show all matching tags in one table
+    console.log(`\nFiltered by: "${filter}"`)
+    console.log("-".repeat(56))
+    for (const [tag, trie] of tags) {
+      const count = trie.size.toLocaleString().padStart(8)
+      console.log(`  ${tag.padEnd(42)} ${count} domains`)
+    }
+  }
+
+  process.exit(0)
+}
 
 async function cli() {
   const opts = {}
