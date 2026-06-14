@@ -103,6 +103,8 @@ npm run build:sea:bundle
 
 # 构建独立可执行文件 (Node.js SEA)
 npm run build:sea
+# 
+dist/straightforward --rules-dir ./rules/ --rules rules.local.json --port 8081 -d
 ```
 
 ### 运行测试
