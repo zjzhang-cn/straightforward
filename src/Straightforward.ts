@@ -9,6 +9,8 @@ import { MiddlewareDispatcher } from "./MiddlewareDispatcher"
 import { auth } from "./middleware/auth"
 import { echo } from "./middleware/echo"
 
+import { createLookupFunction } from "./dns-resolver"
+
 import os from "os"
 const numCPUs = os.cpus().length
 
@@ -19,6 +21,8 @@ export interface StraightforwardOptions {
   requestTimeout: number
   /** Global source IP to bind for all outbound connections (multi-NIC servers). Overridden by per-rule localAddress from proxyRules. */
   localAddress?: string
+  /** Global default DNS server for all outbound connections. Overridden by per-rule dns from proxyRules. */
+  dns?: string
 }
 
 export type Request = http.IncomingMessage & RequestAdditions
@@ -28,6 +32,8 @@ export interface RequestLocals {
   urlParts: { host: string; port: number; path: string }
   upstream?: { host: string; port: number; auth?: { user: string; pass: string } }
   localAddress?: string
+  /** DNS server from proxy rule. When undefined, OS default resolution is used. */
+  dns?: string
 }
 
 export interface RequestAdditions {
@@ -100,6 +106,12 @@ export class Straightforward extends EventEmitter {
     // (both direct and via upstream) bind to this source IP.
     if (opts.localAddress) {
       this.#globalLocalAddress = opts.localAddress
+    }
+
+    // When dns is set on the instance, all outbound connections
+    // (both direct and via upstream) resolve via this DNS server.
+    if (opts.dns) {
+      this.#globalDns = opts.dns
     }
 
     this.#httpAgent = new http.Agent({
@@ -188,12 +200,14 @@ export class Straightforward extends EventEmitter {
   private _proxyRequest(req: Request, res: Response) {
     const upstream = req.locals.upstream
     const localAddr = req.locals.localAddress ?? this.#globalLocalAddress
+    const dnsServer = req.locals.dns ?? this.#globalDns
+    const lookup = dnsServer ? createLookupFunction(dnsServer) : undefined
 
     // Debug: print connection route
     if (upstream) {
-      debug("proxyRequest: %s %s → upstream %s:%s (bind=%s)", req.method, req.url, upstream.host, upstream.port, localAddr || "OS default")
+      debug("proxyRequest: %s %s → upstream %s:%s (bind=%s, dns=%s)", req.method, req.url, upstream.host, upstream.port, localAddr || "OS default", dnsServer || "OS default")
     } else {
-      debug("proxyRequest: %s %s → direct to %s:%s (bind=%s)", req.method, req.url, req.locals.urlParts.host, req.locals.urlParts.port, localAddr || "OS default")
+      debug("proxyRequest: %s %s → direct to %s:%s (bind=%s, dns=%s)", req.method, req.url, req.locals.urlParts.host, req.locals.urlParts.port, localAddr || "OS default", dnsServer || "OS default")
     }
 
     // Strip hop-by-hop headers before forwarding
@@ -214,6 +228,7 @@ export class Straightforward extends EventEmitter {
       headers,
       agent: this.#httpAgent,
       ...(localAddr && localAddr !== "0.0.0.0" ? { localAddress: localAddr } : {}),
+      ...(lookup ? { lookup } : {}),
       ...req.locals.urlParts,
     })
 
@@ -271,6 +286,9 @@ export class Straightforward extends EventEmitter {
         Buffer.from(`${upstream.auth.user}:${upstream.auth.pass}`).toString("base64")
     }
 
+    const dnsServer = req.locals.dns ?? this.#globalDns
+    const lookup = dnsServer ? createLookupFunction(dnsServer) : undefined
+
     const proxyReq = http.request({
       method: req.method,
       host: upstream.host,
@@ -279,6 +297,7 @@ export class Straightforward extends EventEmitter {
       headers,
       agent,
       ...(localAddr && localAddr !== "0.0.0.0" ? { localAddress: localAddr } : {}),
+      ...(lookup ? { lookup } : {}),
       setHost: false, // preserve original Host header
     })
 
@@ -313,6 +332,9 @@ export class Straightforward extends EventEmitter {
 
   /** Source IP to bind for all outbound connections when no per-rule override */
   #globalLocalAddress: string | undefined
+
+  /** DNS server to use for all outbound connections when no per-rule override */
+  #globalDns: string | undefined
 
   private async _onResponse(
     req: Request,
@@ -364,13 +386,15 @@ export class Straightforward extends EventEmitter {
     const upstream = req.locals.upstream
     // Per-rule localAddress takes priority over global; fallback to instance-level
     const localAddr = req.locals.localAddress ?? this.#globalLocalAddress
+    const dnsServer = req.locals.dns ?? this.#globalDns
+    const lookup = dnsServer ? createLookupFunction(dnsServer) : undefined
 
     // Debug: print connection route
     if (upstream) {
-      debug("proxyConnect: %s %s → upstream %s:%s (bind=%s)", req.method, req.url, upstream.host, upstream.port, localAddr || "OS default")
+      debug("proxyConnect: %s %s → upstream %s:%s (bind=%s, dns=%s)", req.method, req.url, upstream.host, upstream.port, localAddr || "OS default", dnsServer || "OS default")
     } else {
       const target = req.locals.urlParts
-      debug("proxyConnect: %s %s → direct to %s:%s (bind=%s)", req.method, req.url, target.host, target.port, localAddr || "OS default")
+      debug("proxyConnect: %s %s → direct to %s:%s (bind=%s, dns=%s)", req.method, req.url, target.host, target.port, localAddr || "OS default", dnsServer || "OS default")
     }
 
     if (upstream) {
@@ -389,6 +413,9 @@ export class Straightforward extends EventEmitter {
     }
     if (localAddr && localAddr !== "0.0.0.0") {
       connectOpts.localAddress = localAddr
+    }
+    if (lookup) {
+      connectOpts.lookup = lookup
     }
 
     const serverSocket = net.connect(connectOpts, () => {
@@ -441,6 +468,9 @@ export class Straightforward extends EventEmitter {
     upstream: { host: string; port: number; auth?: { user: string; pass: string } },
     localAddr: string | undefined
   ) {
+    const dnsServer = req.locals.dns ?? this.#globalDns
+    const lookup = dnsServer ? createLookupFunction(dnsServer) : undefined
+
     const connectOpts: net.NetConnectOpts = {
       host: upstream.host,
       port: upstream.port,
@@ -448,8 +478,11 @@ export class Straightforward extends EventEmitter {
     if (localAddr && localAddr !== "0.0.0.0") {
       connectOpts.localAddress = localAddr
     }
+    if (lookup) {
+      connectOpts.lookup = lookup
+    }
 
-    debug("proxyConnectViaUpstream: connecting to upstream %s:%s (bind=%s)", upstream.host, upstream.port, localAddr || "OS default")
+    debug("proxyConnectViaUpstream: connecting to upstream %s:%s (bind=%s, dns=%s)", upstream.host, upstream.port, localAddr || "OS default", dnsServer || "OS default")
 
     const upstreamSocket = net.connect(connectOpts, () => {
       ;(upstreamSocket as net.Socket).setNoDelay(true)

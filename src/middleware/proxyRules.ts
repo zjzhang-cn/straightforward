@@ -23,6 +23,8 @@ export interface ProxyRule {
   localAddress?: string
   /** Upstream proxy to route through. Omit = direct connect */
   upstream?: UpstreamProxy
+  /** DNS server for resolving target hostname (e.g. "8.8.8.8"). Omit = OS default */
+  dns?: string
 }
 
 export interface ProxyRulesConfig {
@@ -30,13 +32,15 @@ export interface ProxyRulesConfig {
   default?: {
     localAddress?: string
     upstream?: UpstreamProxy
+    /** Default DNS server when no per-rule dns is set */
+    dns?: string
   }
   /** Rule-set resolver for geosite: prefix matching. */
   ruleSets?: RuleSetResolver
 }
 
 export interface RequestAdditionsProxyRules {
-  locals: { upstream?: UpstreamProxy; localAddress?: string }
+  locals: { upstream?: UpstreamProxy; localAddress?: string; dns?: string }
 }
 
 // ============================================================
@@ -142,10 +146,12 @@ export const proxyRules = (
           ? `upstream=${rule.upstream.host}:${rule.upstream.port}`
           : "upstream=none(direct)"
         const bindStr = rule.localAddress ?? def?.localAddress ?? "OS default"
-        debug(`proxyRules: matched "${rule.match}" → host=%s type=%s ${upstreamStr} bind=%s`, hostname, isConnectType ? "connect" : "http", bindStr)
+        const dnsStr = (rule.dns ?? def?.dns) ? `dns=${rule.dns ?? def?.dns}` : ""
+        debug(`proxyRules: matched "${rule.match}" → host=%s type=%s ${upstreamStr} bind=%s %s`, hostname, isConnectType ? "connect" : "http", bindStr, dnsStr)
 
         ctx.req.locals.upstream = rule.upstream
         ctx.req.locals.localAddress = rule.localAddress ?? def?.localAddress ?? "0.0.0.0"
+        ctx.req.locals.dns = rule.dns ?? def?.dns
         return next()
       }
     }
@@ -154,6 +160,7 @@ export const proxyRules = (
     debug(`proxyRules: no rule matched ${hostname}, using defaults`)
     ctx.req.locals.upstream = def?.upstream
     ctx.req.locals.localAddress = def?.localAddress ?? "0.0.0.0"
+    ctx.req.locals.dns = def?.dns
     return next()
   }
 }

@@ -110,6 +110,11 @@ const argv = yargs
     type: "string",
     group: "网络:",
   })
+  .option("dns", {
+    describe: `自定义 DNS 服务器 (格式: IP地址，如 8.8.8.8)`,
+    type: "string",
+    group: "网络:",
+  })
   .option("quiet", {
     alias: "q",
     describe: `静默请求日志`,
@@ -239,6 +244,9 @@ async function cli() {
   if (argv.localAddress) {
     opts.localAddress = argv.localAddress
   }
+  if (argv.dns) {
+    opts.dns = argv.dns
+  }
 
   const sf = new Straightforward(opts)
 
@@ -335,6 +343,7 @@ async function cli() {
           match: "*",
           localAddress: argv.localAddress,
           upstream,
+          ...(argv.dns ? { dns: argv.dns } : {}),
         },
       ],
     }
