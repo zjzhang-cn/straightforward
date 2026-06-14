@@ -174,7 +174,11 @@ remove(mw: Middleware<T>): void {
 
 > 以下功能均遵循"保持最小化、零外部依赖"原则。
 
-### 功能六：请求/响应头改写
+### 功能六：请求/响应头改写 ✅
+
+详见 [docs/completed/header-rewrite.md](docs/completed/header-rewrite.md)
+
+- [x] **headers 中间件** — 支持 onRequest/onResponse，变量插值，set/remove 操作 — `待提交`
 
 ```ts
 sf.onRequest.use(middleware.headers({
@@ -225,7 +229,7 @@ sf.gracefulClose({ timeout: 10_000 }) // 10 秒超时后强制关闭
 | v2ray-rules-dat 集成 | ~350 行 | 高 | ✅ 已完成 |
 | IP ACL | ~170 行 | 中 | ✅ 已完成 |
 | geosite.dat 支持 | ~200 行 | 高 | ✅ 已完成 |
-| Header 改写 | ~40 行 | 中 | 待实现 |
+| Header 改写 | ~60 行 | 中 | ✅ 已完成 |
 | 连接数限制 | ~50 行 | 中 | 待实现 |
 | 结构化日志 | ~30 行 | 低 | 待实现 |
 | 优雅关闭 | ~30 行 | 低 | 待实现 |
