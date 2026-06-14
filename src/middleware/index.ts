@@ -1,5 +1,6 @@
 export * from "./acl"
 export * from "./auth"
+export * from "./connectionLimit"
 export * from "./echo"
 export * from "./headers"
 export * from "./proxyRules"

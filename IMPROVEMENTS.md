@@ -234,13 +234,17 @@ sf.onRequest.use(middleware.headers({
 
 **复杂度**: ~40 行，纯中间件。注意 hop-by-hop 头始终被剥离，用户无法覆盖。
 
-### 功能七：连接数限制
+### 功能七：连接数限制 ✅
+
+详见 [docs/completed/connection-limit.md](docs/completed/connection-limit.md)
+
+- [x] **connectionLimit 中间件** — 单 IP 并发连接数限制，超限返回 429，支持白名单 — `待提交`
 
 ```ts
 sf.onRequest.use(middleware.connectionLimit({ maxConnectionsPerIP: 8 }))
 ```
 
-**复杂度**: ~50 行。维护 `Map<ip, count>`，超限返回 429。
+**复杂度**: ~60 行。维护 `Map<ip, count>`，超限返回 429。
 
 ### 功能八：结构化访问日志
 
@@ -312,7 +316,7 @@ sf.close({ graceful: true, timeout: 10_000 })
 | IP ACL | ~170 行 | 中 | ✅ 已完成 |
 | geosite.dat 支持 | ~200 行 | 高 | ✅ 已完成 |
 | Header 改写 | ~60 行 | 中 | ✅ 已完成 |
-| 连接数限制 | ~50 行 | 中 | 待实现 |
+| 连接数限制 | ~60 行 | 中 | ✅ 已完成 |
 | 结构化日志 | ~30 行 | 低 | 待实现 |
 | 优雅关闭 | ~30 行 | 低 | 待实现 |
 | SOCKS5 上游代理 | ~80 行 | 中 | 待实现 |
