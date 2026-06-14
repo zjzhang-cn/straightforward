@@ -4,10 +4,93 @@
 
   "rules": [
     {
+      "match": "geosite:category-ads-all",
+      "upstream": {
+        "host": "127.0.0.1",
+        "port": 1084
+      }
+    },
+    {
       "match": "geosite:gfw",
       "upstream": {
         "host": "127.0.0.1",
         "port": 1082
+      }
+    },
+    {
+      "match": "geosite:telegram",
+      "upstream": {
+        "host": "127.0.0.1",
+        "port": 1083
+      }
+    },
+    {
+      "match": "geosite:twitter",
+      "upstream": {
+        "host": "127.0.0.1",
+        "port": 1083
+      }
+    },
+    {
+      "match": "geosite:youtube",
+      "upstream": {
+        "host": "proxy-us.example.com",
+        "port": 8080,
+        "auth": {
+          "user": "user1",
+          "pass": "pass1"
+        }
+      }
+    },
+    {
+      "match": "geosite:netflix",
+      "upstream": {
+        "host": "proxy-us.example.com",
+        "port": 8080,
+        "auth": {
+          "user": "user1",
+          "pass": "pass1"
+        }
+      }
+    },
+    {
+      "match": "*.google.com",
+      "upstream": {
+        "host": "proxy-us.example.com",
+        "port": 8080
+      }
+    },
+    {
+      "match": "geosite:openai",
+      "upstream": {
+        "host": "proxy-jp.example.com",
+        "port": 3128,
+        "auth": {
+          "user": "user2",
+          "pass": "pass2"
+        }
+      }
+    },
+    {
+      "match": "geosite:anthropic",
+      "upstream": {
+        "host": "proxy-jp.example.com",
+        "port": 3128,
+        "auth": {
+          "user": "user2",
+          "pass": "pass2"
+        }
+      }
+    },
+    {
+      "match": "geosite:github",
+      "upstream": {
+        "host": "proxy-jp.example.com",
+        "port": 3128,
+        "auth": {
+          "user": "user2",
+          "pass": "pass2"
+        }
       }
     },
     {
@@ -27,29 +110,23 @@
       "upstream": null
     },
     {
-      "match": "geosite:telegram",
-      "upstream": {
-        "host": "127.0.0.1",
-        "port": 1082
-      }
+      "match": "192.168.*",
+      "upstream": null
     },
     {
-      "match": "geosite:twitter",
-      "upstream": {
-        "host": "127.0.0.1",
-        "port": 1082
-      }
+      "match": "10.*",
+      "upstream": null
     },
     {
-      "match": "geosite:youtube",
-      "upstream": {
-        "host": "127.0.0.1",
-        "port": 1082
-      }
+      "match": "172.16.*",
+      "upstream": null
     },
     {
       "match": "*",
-      "upstream": null
+      "upstream": {
+        "host": "127.0.0.1",
+        "port": 1082
+      }
     }
   ]
 }
