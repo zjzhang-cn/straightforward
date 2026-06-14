@@ -65,6 +65,10 @@ const argv = yargs
     describe: `Force re-download even if rule files already exist locally`,
     type: "boolean",
   })
+  .option("rules-download-dat", {
+    describe: `Download geosite.dat (binary format with all tags in one file)`,
+    type: "boolean",
+  })
   .option("upstream-host", {
     describe: `Upstream proxy host (when not using --rules)`,
     type: "string",
@@ -122,23 +126,40 @@ async function cli() {
   }
 
   // ── Auto-download rule files (before loading resolver) ──
-  if (argv.rulesDownload || argv.rulesDownloadForce) {
+  if (argv.rulesDownload || argv.rulesDownloadForce || argv.rulesDownloadDat) {
     if (!argv.rulesDir) {
-      console.error("Error: --rules-download requires --rules-dir to be set")
+      console.error("Error: --rules-download/--rules-download-dat requires --rules-dir to be set")
       process.exit(1)
     }
     const { ruleSet } = require("./dist/index.js")
-    const tags = argv.rulesDownload === true || argv.rulesDownload === ""
-      ? undefined  // use defaults
-      : argv.rulesDownload.split(",").map((s) => s.trim()).filter(Boolean)
-    if (!argv.silent && !argv.quiet) {
-      console.log(`  Downloading rule-set files (${tags?.join(",") || "default"}) from loyalsoldier/v2ray-rules-dat...`)
+
+    // Download .txt files (individual tags)
+    if (argv.rulesDownload || argv.rulesDownloadForce) {
+      const tags = argv.rulesDownload === true || argv.rulesDownload === ""
+        ? undefined  // use defaults
+        : argv.rulesDownload.split(",").map((s) => s.trim()).filter(Boolean)
+      if (!argv.silent && !argv.quiet) {
+        console.log(`  Downloading rule-set files (${tags?.join(",") || "default"}) from loyalsoldier/v2ray-rules-dat...`)
+      }
+      const result = await ruleSet.downloadRules(argv.rulesDir, tags, !!argv.rulesDownloadForce)
+      if (!argv.silent && !argv.quiet) {
+        if (result.downloaded.length) console.log(`    Downloaded: ${result.downloaded.join(", ")}`)
+        if (result.skipped.length) console.log(`    Skipped (already exist): ${result.skipped.join(", ")}`)
+        if (result.errors.length) result.errors.forEach(e => console.error(`    Error [${e.tag}]: ${e.message}`))
+      }
     }
-    const result = await ruleSet.downloadRules(argv.rulesDir, tags, !!argv.rulesDownloadForce)
-    if (!argv.silent && !argv.quiet) {
-      if (result.downloaded.length) console.log(`    Downloaded: ${result.downloaded.join(", ")}`)
-      if (result.skipped.length) console.log(`    Skipped (already exist): ${result.skipped.join(", ")}`)
-      if (result.errors.length) result.errors.forEach(e => console.error(`    Error [${e.tag}]: ${e.message}`))
+
+    // Download geosite.dat (binary format with all tags)
+    if (argv.rulesDownloadDat) {
+      if (!argv.silent && !argv.quiet) {
+        console.log(`  Downloading geosite.dat from loyalsoldier/v2ray-rules-dat...`)
+      }
+      const result = await ruleSet.downloadGeositeDat(argv.rulesDir, !!argv.rulesDownloadForce)
+      if (!argv.silent && !argv.quiet) {
+        if (result.downloaded.length) console.log(`    Downloaded: ${result.downloaded.join(", ")}`)
+        if (result.skipped.length) console.log(`    Skipped (already exist): ${result.skipped.join(", ")}`)
+        if (result.errors.length) result.errors.forEach(e => console.error(`    Error [${e.tag}]: ${e.message}`))
+      }
     }
   }
 

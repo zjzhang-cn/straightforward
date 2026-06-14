@@ -145,8 +145,54 @@ function fetchReleaseTag(): Promise<string> {
 }
 
 /**
- * Download a file via HTTPS, writing to a temp file then renaming atomically.
+ * Download geosite.dat from the latest GitHub release.
+ *
+ * The .dat file contains all tags in a single binary file (v2ray protobuf format).
+ * Much smaller and more efficient than downloading individual .txt files.
+ *
+ * @param rulesDir  Target directory for the .dat file
+ * @param force     If true, re-download even if local file exists
  */
+export async function downloadGeositeDat(
+  rulesDir: string,
+  force?: boolean
+): Promise<DownloadResult> {
+  const result: DownloadResult = { downloaded: [], skipped: [], errors: [] }
+  const filename = "geosite.dat"
+  const destPath = join(rulesDir, filename)
+
+  mkdirSync(rulesDir, { recursive: true })
+
+  if (existsSync(destPath) && !force) {
+    debug(`downloader: skipping "${filename}" — already exists`)
+    result.skipped.push(filename)
+    return result
+  }
+
+  let releaseTag: string
+  try {
+    releaseTag = await fetchReleaseTag()
+    debug(`downloader: latest release = %s`, releaseTag)
+  } catch (err: any) {
+    debug(`downloader: failed to fetch release: %s`, err.message)
+    result.errors.push({ tag: "__release__", message: err.message })
+    return result
+  }
+
+  const url = `https://github.com/Loyalsoldier/v2ray-rules-dat/releases/download/${releaseTag}/${filename}`
+
+  try {
+    debug(`downloader: downloading "${filename}" from %s`, url)
+    await downloadFile(url, destPath)
+    result.downloaded.push(filename)
+    debug(`downloader: downloaded "${filename}" → %s`, destPath)
+  } catch (err: any) {
+    debug(`downloader: failed to download "${filename}": %s`, err.message)
+    result.errors.push({ tag: filename, message: err.message })
+  }
+
+  return result
+}
 function downloadFile(url: string, destPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const tmpPath = destPath + ".tmp"

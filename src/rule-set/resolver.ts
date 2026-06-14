@@ -1,6 +1,7 @@
 import { readFileSync, existsSync, readdirSync } from "fs"
 import { resolve, basename, extname } from "path"
 import { DomainTrie } from "./domain-trie"
+import { loadGeositeDat } from "./geosite-dat"
 
 import Debug from "debug"
 const debug = Debug("straightforward:rule-set")
@@ -25,25 +26,46 @@ export interface RuleSetResolver {
 /**
  * Create a RuleSetResolver from a rules directory.
  *
- * Scans `rulesDir` for *.txt files. Each file becomes a tag named
- * by its basename (without `.txt`). E.g. `gfw.txt` → tag `gfw`.
+ * Scans `rulesDir` for:
+ *   - *.dat files (v2ray binary format) — loaded first, tags come from inside the file
+ *   - *.txt files — loaded second, can override .dat tags with the same name
  *
  * Supports two kinds of tag reference:
- *   1. Named: `geosite:gfw`  → looks up `gfw.txt` in rulesDir
+ *   1. Named: `geosite:gfw`  → looks up `gfw` in cache
  *   2. Path:  `geosite:./custom.txt` → loads that specific file
  */
 export function createRuleSetResolver(rulesDir?: string): RuleSetResolver {
   // Map<tag, trie>
   const cache = new Map<string, DomainTrie>()
 
-  // Auto-load all .txt files from rulesDir
+  // Auto-load all .dat and .txt files from rulesDir
   if (rulesDir) {
     const dir = resolve(rulesDir)
     if (existsSync(dir)) {
-      const files = readdirSync(dir).filter(
-        (f) => extname(f) === ".txt"
-      )
+      const files = readdirSync(dir)
+
+      // Phase 1: Load .dat files (v2ray binary format)
+      // Each .dat contains multiple tags internally
       for (const file of files) {
+        if (extname(file) !== ".dat") continue
+        try {
+          const tagMap = loadGeositeDat(resolve(dir, file))
+          for (const [tag, trie] of tagMap) {
+            // Only set if no .txt file has already claimed this tag
+            // (.txt files are loaded in Phase 2 and will override)
+            if (!cache.has(tag)) {
+              cache.set(tag, trie)
+            }
+          }
+          debug(`rule-set: loaded %d tags from %s`, tagMap.size, file)
+        } catch (err: any) {
+          debug(`rule-set: failed to load %s: %s`, file, err.message)
+        }
+      }
+
+      // Phase 2: Load .txt files (override .dat tags with same name)
+      for (const file of files) {
+        if (extname(file) !== ".txt") continue
         const tag = basename(file, ".txt")
         try {
           const trie = loadTxtFile(resolve(dir, file))
@@ -53,6 +75,7 @@ export function createRuleSetResolver(rulesDir?: string): RuleSetResolver {
           debug(`rule-set: failed to load %s: %s`, file, err.message)
         }
       }
+
       debug(`rule-set: %d tags loaded from %s`, cache.size, dir)
     } else {
       debug(`rule-set: directory not found: %s`, dir)

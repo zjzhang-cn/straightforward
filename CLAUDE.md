@@ -65,12 +65,18 @@ Middleware functions have the signature `(context, next) => void | Promise<void>
 
 Zero-dependency domain matching engine for `geosite:` prefixed rules in proxyRules:
 
-- **`DomainTrie`** (`domain-trie.ts`) — reversed-domain suffix trie. Inserts domain rules by reversing their labels (e.g. `google.com` → `com.google`), then matches hostnames by walking the trie. O(domain-length) match time. Supports suffix match semantics (same as v2ray `Domain` type): `google.com` matches `www.google.com` but not `notgoogle.com`.
-- **`resolver.ts`** — `createRuleSetResolver(rulesDir)` scans a directory of `.txt` files, loads each as a named tag (e.g. `gfw.txt` → tag `"gfw"`), and provides `match(tag, hostname)` for efficient domain lookup. Also supports direct file-path references (`geosite:./custom.txt`).
+- **`DomainTrie`** (`domain-trie.ts`) — reversed-domain suffix trie with full-match support. Inserts domain rules by reversing their labels (e.g. `google.com` → `com.google`), then matches hostnames by walking the trie. O(domain-length) match time. Supports two match modes:
+  - **Suffix** (default): `google.com` matches `www.google.com` but not `notgoogle.com`
+  - **Full** (exact): `google.com` matches only `google.com`
+- **`resolver.ts`** — `createRuleSetResolver(rulesDir)` scans a directory for `.txt` and `.dat` files:
+  - `.txt` files: each becomes a named tag (e.g. `gfw.txt` → tag `"gfw"`). Supports `full:` and `domain:` prefixes per line.
+  - `.dat` files (v2ray protobuf binary): all tags extracted from a single file. `.txt` tags override `.dat` tags with the same name.
+  - Provides `match(tag, hostname)` for efficient domain lookup. Also supports direct file-path references (`geosite:./custom.txt`).
+- **`geosite-dat.ts`** — zero-dependency protobuf wire format decoder for v2ray `geosite.dat` binary format. Hand-rolls varint/string/message parsing using only Buffer operations (~100 lines). Domain types: `Full(3)` → exact match, `Domain(2)` → suffix match, `Plain(0)` / `Regex(1)` → skipped.
+- **`downloader.ts`** — auto-downloader for `.txt` rule files and `geosite.dat` from GitHub releases.
 - **`index.ts`** — barrel export as `ruleSet` namespace.
 
-Usage: download `gfw.txt`, `direct-list.txt`, etc. from [loyalsoldier/v2ray-rules-dat releases](https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest), then reference them in proxyRules:
-
+Usage with `.txt` files:
 ```json
 {
   "rules": [
@@ -81,12 +87,29 @@ Usage: download `gfw.txt`, `direct-list.txt`, etc. from [loyalsoldier/v2ray-rule
 }
 ```
 
+Usage with `geosite.dat` (binary format, 1500+ tags in one file):
+```json
+{
+  "rules": [
+    { "match": "geosite:cn", "localAddress": "192.168.3.78" },
+    { "match": "geosite:gfw", "upstream": { "host": "127.0.0.1", "port": 1082 } },
+    { "match": "*", "upstream": null }
+  ]
+}
+```
+
 CLI: `straightforward --rules-dir ./rules/ --rules proxyrules.json`
 
 Auto-download rule files from the latest release:
 ```bash
 # Download default set (gfw, direct-list, proxy-list)
 straightforward --rules-dir ./rules/ --rules-download
+
+# Download geosite.dat (binary format, all 1500+ tags in one file)
+straightforward --rules-dir ./rules/ --rules-download-dat
+
+# Download both .txt and .dat
+straightforward --rules-dir ./rules/ --rules-download --rules-download-dat
 
 # Download specific tags
 straightforward --rules-dir ./rules/ --rules-download gfw,apple-cn,google-cn
