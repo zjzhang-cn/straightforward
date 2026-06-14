@@ -318,7 +318,7 @@ sf.close({ graceful: true, timeout: 10_000 })
 
 **复杂度**: ~30 行代码变更 + 配置。SEA 二进制 ~126MB → ~136MB (+8%)。
 
-**状态**: 📝 计划就绪
+**状态**: ✅ 已完成 — `91c2298`
 
 ```ts
 sf.close({ graceful: true, timeout: 10_000 })
@@ -347,7 +347,7 @@ sf.close({ graceful: true, timeout: 10_000 })
 | SOCKS5 上游代理 | ~80 行 | 中 | 待实现 |
 | 健康检查端点 | ~20 行 | 低 | 待实现 |
 | close() 优雅关闭 | ~30 行 | 中 | 待实现 |
-| SEA 内置 geosite.dat | ~30 行 | 高 | 📝 计划就绪 |
+| SEA 内置 geosite.dat | ~30 行 | 高 | ✅ 已完成 |
 
 ---
 
