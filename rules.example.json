@@ -1,0 +1,55 @@
+{
+  "$comment": "straightforward 代理规则配置示例",
+  "$comment2": "规则从上到下匹配，第一条匹配的规则生效",
+
+  "rules": [
+    {
+      "match": "geosite:gfw",
+      "upstream": {
+        "host": "127.0.0.1",
+        "port": 1082
+      }
+    },
+    {
+      "match": "geosite:cn",
+      "upstream": null
+    },
+    {
+      "match": "geosite:apple-cn",
+      "upstream": null
+    },
+    {
+      "match": "geosite:google-cn",
+      "upstream": null
+    },
+    {
+      "match": "*.cn",
+      "upstream": null
+    },
+    {
+      "match": "geosite:telegram",
+      "upstream": {
+        "host": "127.0.0.1",
+        "port": 1082
+      }
+    },
+    {
+      "match": "geosite:twitter",
+      "upstream": {
+        "host": "127.0.0.1",
+        "port": 1082
+      }
+    },
+    {
+      "match": "geosite:youtube",
+      "upstream": {
+        "host": "127.0.0.1",
+        "port": 1082
+      }
+    },
+    {
+      "match": "*",
+      "upstream": null
+    }
+  ]
+}
