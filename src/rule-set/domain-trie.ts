@@ -124,4 +124,40 @@ export class DomainTrie {
     this.#fullMatch.clear()
     this.#size = 0
   }
+
+  /**
+   * List all domains in the trie.
+   *
+   * Returns an array of objects with the domain string and its match mode:
+   *   { domain: "google.com", mode: "domain" }  — suffix match
+   *   { domain: "dl.google.com", mode: "full" }  — exact match only
+   */
+  list(): Array<{ domain: string; mode: "domain" | "full" }> {
+    const results: Array<{ domain: string; mode: "domain" | "full" }> = []
+
+    // Full-match entries
+    for (const domain of this.#fullMatch) {
+      results.push({ domain, mode: "full" })
+    }
+
+    // Trie entries (suffix match)
+    this._walkTrie(this.#root, [], results)
+
+    return results
+  }
+
+  private _walkTrie(
+    node: TrieNode,
+    labels: string[],
+    results: Array<{ domain: string; mode: "domain" | "full" }>
+  ): void {
+    if (node.isRule && labels.length > 0) {
+      results.push({ domain: labels.slice().reverse().join("."), mode: "domain" })
+    }
+    for (const [label, child] of node.children) {
+      labels.push(label)
+      this._walkTrie(child, labels, results)
+      labels.pop()
+    }
+  }
 }

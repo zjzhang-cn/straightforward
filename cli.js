@@ -140,11 +140,12 @@ if (argv.showTags !== undefined || argv.showDomains) {
       console.error(`Available tags: ${Array.from(map.keys()).sort().join(", ")}`)
       process.exit(1)
     }
-    console.log(`Tag: ${tag} (${trie.size} domains)`)
-    // We can't list all domains from a trie easily (they're stored reversed),
-    // so we show the full-match domains and a note about trie domains
-    console.log(`\nUse --debug with a rules config to verify domain matching.`)
-    console.log(`Example: node cli.js --debug --rules-dir ./rules/ --rules rules.json`)
+    const domains = trie.list()
+    console.log(`Tag: ${tag} (${domains.length} domains)\n`)
+    for (const { domain, mode } of domains) {
+      const modeTag = mode === "full" ? "[full]" : "[domain]"
+      console.log(`  ${modeTag.padEnd(10)} ${domain}`)
+    }
     process.exit(0)
   }
 
