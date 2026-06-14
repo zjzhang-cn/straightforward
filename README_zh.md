@@ -57,14 +57,19 @@
 | 特性 | 说明 |
 |------|------|
 | HTTP/HTTPS/WebSocket 代理 | 支持 CONNECT 隧道、HTTP 转发、wss |
-| 统一配置文件 (`proxyRules`) | 一条规则同时控制：路由 + 出口 IP + 上游代理 |
+| 统一配置文件 (`proxyRules`) | 一条规则同时控制：路由 + 出口 IP + 上游代理 + DNS |
 | v2ray 规则集 (`geosite:`) | 支持 `.txt` 和 `.dat` 二进制格式，1500+ 标签 |
 | 自动下载规则文件 | 从 GitHub Release 自动获取最新规则 |
 | IP ACL 访问控制 | 白名单/黑名单、CIDR 匹配、IPv4/IPv6 |
 | 认证中间件 | 静态密码 / 动态认证 |
+| 请求/响应头改写 | 变量插值、set/remove 操作 |
+| 连接数限制 | 按 IP 限制并发连接数，白名单豁免 |
+| 按规则指定 DNS 服务器 | 不同域名使用不同 DNS 服务器避免污染 |
+| 细粒度超时控制 | connectTimeout + readTimeout 分离 |
 | 零外部运行时依赖 | 仅 `debug` + `yargs`，手写 protobuf 解码器 |
 | TCP_NODELAY | CONNECT 隧道消除 40ms+ Nagle 延迟 |
 | HTTP Keep-Alive | 上游连接复用，吞吐量提升 5x |
+| Hop-by-hop 头清理 | 自动剥离逐跳头防止连接错乱 |
 | 集群模式 | 利用多核 CPU |
 | Node.js SEA | 打包为独立可执行文件，无需 Node.js 运行时 |
 
@@ -283,6 +288,7 @@ straightforward --port 8081 --cluster
 | `upstream.host` | `string` | 上游代理主机 |
 | `upstream.port` | `number` | 上游代理端口 |
 | `upstream.auth` | `{ user, pass }` | 可选，上游代理认证 |
+| `dns` | `string` | 可选，自定义 DNS 服务器（如 `"8.8.8.8"`） |
 
 ### 匹配模式 (`match`)
 
@@ -294,6 +300,33 @@ straightforward --port 8081 --cluster
 | `geosite:./path.txt` | 自定义规则文件 | `"geosite:./custom.txt"` |
 
 **规则从上到下匹配，第一条匹配的规则生效。**
+
+### DNS 分流
+
+支持在规则中为不同域名指定不同的 DNS 服务器，优先级：`per-rule dns > CLI --dns > OS 默认`。
+
+```json
+{
+  "rules": [
+    {
+      "match": "geosite:gfw",
+      "dns": "8.8.8.8",
+      "upstream": { "host": "127.0.0.1", "port": 1082 }
+    },
+    {
+      "match": "geosite:cn",
+      "dns": "223.5.5.5",
+      "upstream": null
+    },
+    {
+      "match": "*",
+      "dns": "1.1.1.1"
+    }
+  ]
+}
+```
+
+DNS 解析使用 `dns.promises.Resolver` 实例（不影响系统全局 DNS），Resolver 实例按服务器地址缓存（FIFO，最多 20 个）。
 
 ### 匹配优先级
 
@@ -500,6 +533,41 @@ sf.onRequest.use(middleware.acl({
 }))
 ```
 
+#### headers — 请求/响应头改写
+
+```js
+// 请求头：添加 X-Forwarded-For，删除 User-Agent
+sf.onRequest.use(middleware.headers({
+  set: { "X-Forwarded-For": "${client.ip}" },
+  remove: ["User-Agent"],
+}))
+
+// 响应头：隐藏源站信息
+sf.onResponse.use(middleware.headers({
+  set: { "X-Proxied-By": "straightforward" },
+  remove: ["Server", "X-Powered-By"],
+}))
+```
+
+支持的变量：`${client.ip}`、`${target.host}`、`${target.port}`、`${req.method}`、`${req.url}`、`${upstream.host}`、`${upstream.port}`、`${proxy.status}`（仅 onResponse）。
+
+#### connectionLimit — 连接数限制
+
+```js
+// 每个 IP 最多 8 个并发连接
+sf.onRequest.use(middleware.connectionLimit({ maxConnectionsPerIP: 8 }))
+sf.onConnect.use(middleware.connectionLimit({ maxConnectionsPerIP: 8 }))
+
+// 自定义状态码和白名单
+sf.onRequest.use(middleware.connectionLimit({
+  maxConnectionsPerIP: 20,
+  statusCode: 503,
+  whitelist: ["10.0.0.0/8"],
+}))
+```
+
+超限返回 429 Too Many Requests，连接关闭时自动释放槽位。默认白名单：`127.0.0.1`、`::1`。
+
 ---
 
 ## 程序化使用 (API
@@ -511,7 +579,10 @@ const { Straightforward, middleware, ruleSet } = require("straightforward")
 
 ;(async () => {
   const sf = new Straightforward({
-    localAddress: "10.0.0.1"  // 全局出口 IP
+    localAddress: "10.0.0.1",  // 全局出口 IP
+    dns: "8.8.8.8",            // 全局默认 DNS
+    connectTimeout: 10_000,    // TCP 连接超时 (默认 10s)
+    readTimeout: 30_000,       // Socket 空闲读超时 (默认 30s)
   })
 
   // 请求日志
@@ -540,6 +611,20 @@ const { Straightforward, middleware, ruleSet } = require("straightforward")
 
   sf.onRequest.use(middleware.proxyRules(config))
   sf.onConnect.use(middleware.proxyRules(config))
+
+  // 头改写
+  sf.onRequest.use(middleware.headers({
+    set: { "X-Forwarded-For": "${client.ip}" },
+    remove: ["User-Agent"],
+  }))
+  sf.onResponse.use(middleware.headers({
+    set: { "X-Proxied-By": "straightforward" },
+    remove: ["Server"],
+  }))
+
+  // 连接数限制
+  sf.onRequest.use(middleware.connectionLimit({ maxConnectionsPerIP: 50 }))
+  sf.onConnect.use(middleware.connectionLimit({ maxConnectionsPerIP: 50 }))
 
   await sf.listen(8081)
   console.log("Proxy running on http://0.0.0.0:8081")
@@ -630,6 +715,9 @@ straightforward/
 | HTTP Keep-Alive | 复用上游 TCP+TLS 连接，RPS 从 ~27 提升到 ~140 (5x) |
 | Hop-by-hop 头清理 | 转发前剥离 `Connection`、`Proxy-Authorization` 等逐跳头 |
 | 上游代理 Agent 缓存 | 每个上游代理地址维护独立的 Keep-Alive Agent |
+| DNS Resolver 缓存 | 每个 DNS 服务器缓存一个 Resolver 实例，FIFO 管理，最多 20 个 |
+| 连接超时 | `connectTimeout` 独立控制连接建立超时（默认 10s），防止慢连接挂住连接池 |
+| 空闲超时 | `readTimeout` Socket 空闲释放（默认 30s），数据传输中自动刷新 |
 | 流式传输 | 所有请求/响应默认 pipe，不缓冲 |
 | DomainTrie | 域名匹配 O(域名长度)，支持 10k+ 域名规则 |
 
