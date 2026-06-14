@@ -293,7 +293,23 @@ const sf = new Straightforward({ healthCheck: true })
 
 **理由**: 部署到负载均衡器后面时需要健康检查端点判断实例是否存活。
 
-### 功能十二：`close()` 优雅关闭
+### 功能十三：SEA 内置 geosite.dat 规则集
+
+> 计划文档：[~/.claude/plans/snug-inventing-kay.md](~/.claude/plans/snug-inventing-kay.md)
+
+将 geosite.dat (~10MB) 通过 SEA `assets` 配置打包进可执行文件，实现单文件分发、开箱即用的规则分流。
+
+**优先级**：`外部 .txt > 外部 .dat > SEA 内置 .dat`
+
+**变更文件**：
+- `sea-config.json` — 添加 `assets: { "rules/geosite.dat": "rules/geosite.dat" }`
+- `src/rule-set/geosite-dat.ts` — 拆分 `loadGeositeDat()` → `loadGeositeDat()` + `parseGeositeDat(buf, name)`
+- `src/rule-set/resolver.ts` — `createRuleSetResolver()` 接收可选 `builtinDatBuffer?: Buffer`
+- `cli.js` — SEA 检测 + asset 读取 + 传入 resolver
+
+**复杂度**: ~30 行代码变更 + 配置。SEA 二进制 ~126MB → ~136MB (+8%)。
+
+**状态**: 📝 计划就绪
 
 ```ts
 sf.close({ graceful: true, timeout: 10_000 })
@@ -322,6 +338,7 @@ sf.close({ graceful: true, timeout: 10_000 })
 | SOCKS5 上游代理 | ~80 行 | 中 | 待实现 |
 | 健康检查端点 | ~20 行 | 低 | 待实现 |
 | close() 优雅关闭 | ~30 行 | 中 | 待实现 |
+| SEA 内置 geosite.dat | ~30 行 | 高 | 📝 计划就绪 |
 
 ---
 
