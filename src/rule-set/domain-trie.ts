@@ -5,6 +5,10 @@
  * in the trie. "google.com" inserted as com → google chain; querying
  * "www.google.com" walks com → google → www and hits the rule node.
  *
+ * Supports two match semantics (same as v2ray):
+ *   - Domain (suffix): the default. "google.com" matches "www.google.com"
+ *   - Full (exact): "google.com" matches ONLY "google.com"
+ *
  * Zero dependencies. O(domain-length) match time.
  */
 
@@ -33,6 +37,8 @@ function reverseLabels(domain: string): string[] {
 export class DomainTrie {
   #root: TrieNode = { children: new Map(), isRule: false }
   #size = 0
+  /** Full-match domains: exact match only, no suffix expansion */
+  #fullMatch = new Set<string>()
 
   /** Number of rules inserted */
   get size(): number {
@@ -41,7 +47,28 @@ export class DomainTrie {
 
   /** Insert a domain rule (e.g. "google.com") */
   insert(domain: string): void {
-    const labels = reverseLabels(domain.trim())
+    this._insertWithMode(domain, false)
+  }
+
+  /** Insert as full-match only (e.g. "google.com" matches only "google.com") */
+  insertFull(domain: string): void {
+    this._insertWithMode(domain, true)
+  }
+
+  private _insertWithMode(domain: string, fullMode: boolean): void {
+    const key = domain.trim().toLowerCase()
+    if (!key) return
+
+    if (fullMode) {
+      if (!this.#fullMatch.has(key)) {
+        this.#fullMatch.add(key)
+        this.#size++
+      }
+      return
+    }
+
+    // Domain (suffix) mode: insert into trie
+    const labels = reverseLabels(key)
     if (labels.length === 0 || labels[0] === "") return
 
     let node = this.#root
@@ -63,14 +90,21 @@ export class DomainTrie {
    * Check if `hostname` matches any rule in the trie.
    *
    * Match semantics (same as v2ray Domain type):
-   *   - Exact: hostname === rule
+   *   - Full: hostname === rule (exact)
    *   - Suffix: hostname ends with "." + rule
    *
    * "google.com" matches "www.google.com" and "mail.google.com"
    * "google.com" does NOT match "notgoogle.com"
    */
   match(hostname: string): boolean {
-    const labels = reverseLabels(hostname.trim())
+    const key = hostname.trim().toLowerCase()
+    if (!key) return false
+
+    // Check full-match set first (exact match)
+    if (this.#fullMatch.has(key)) return true
+
+    // Check trie (suffix match)
+    const labels = reverseLabels(key)
     if (labels.length === 0 || labels[0] === "") return false
 
     let node = this.#root
@@ -87,6 +121,7 @@ export class DomainTrie {
   clear(): void {
     this.#root.children.clear()
     this.#root.isRule = false
+    this.#fullMatch.clear()
     this.#size = 0
   }
 }

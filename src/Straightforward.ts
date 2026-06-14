@@ -186,7 +186,15 @@ export class Straightforward extends EventEmitter {
   ])
 
   private _proxyRequest(req: Request, res: Response) {
-    // debug("proxyReq: \t %s %s", req.method, req.url, req.locals)
+    const upstream = req.locals.upstream
+    const localAddr = req.locals.localAddress ?? this.#globalLocalAddress
+
+    // Debug: print connection route
+    if (upstream) {
+      debug("proxyRequest: %s %s → upstream %s:%s (bind=%s)", req.method, req.url, upstream.host, upstream.port, localAddr || "OS default")
+    } else {
+      debug("proxyRequest: %s %s → direct to %s:%s (bind=%s)", req.method, req.url, req.locals.urlParts.host, req.locals.urlParts.port, localAddr || "OS default")
+    }
 
     // Strip hop-by-hop headers before forwarding
     const headers: Record<string, string | string[] | undefined> = { ...req.headers }
@@ -195,10 +203,6 @@ export class Straightforward extends EventEmitter {
         delete headers[key]
       }
     }
-
-    const upstream = req.locals.upstream
-    // Per-rule localAddress takes priority over global; fallback to instance-level
-    const localAddr = req.locals.localAddress ?? this.#globalLocalAddress
 
     if (upstream) {
       return this._proxyRequestViaUpstream(req, res, upstream, localAddr, headers)
@@ -361,6 +365,14 @@ export class Straightforward extends EventEmitter {
     // Per-rule localAddress takes priority over global; fallback to instance-level
     const localAddr = req.locals.localAddress ?? this.#globalLocalAddress
 
+    // Debug: print connection route
+    if (upstream) {
+      debug("proxyConnect: %s %s → upstream %s:%s (bind=%s)", req.method, req.url, upstream.host, upstream.port, localAddr || "OS default")
+    } else {
+      const target = req.locals.urlParts
+      debug("proxyConnect: %s %s → direct to %s:%s (bind=%s)", req.method, req.url, target.host, target.port, localAddr || "OS default")
+    }
+
     if (upstream) {
       return this._proxyConnectViaUpstream(
         req,
@@ -437,6 +449,8 @@ export class Straightforward extends EventEmitter {
       connectOpts.localAddress = localAddr
     }
 
+    debug("proxyConnectViaUpstream: connecting to upstream %s:%s (bind=%s)", upstream.host, upstream.port, localAddr || "OS default")
+
     const upstreamSocket = net.connect(connectOpts, () => {
       ;(upstreamSocket as net.Socket).setNoDelay(true)
       ;(clientSocket as net.Socket).setNoDelay(true)
@@ -452,36 +466,64 @@ export class Straightforward extends EventEmitter {
       }
       connectReq += "\r\n"
 
+      debug("proxyConnectViaUpstream: connected, sending CONNECT request")
       upstreamSocket.write(connectReq)
     })
+
+    // Already consumed the initial TLS ClientHello from client (head)
+    debug("proxyConnectViaUpstream: head buffer length = %d", head.length)
 
     // Read one response from upstream — "HTTP/1.1 200 Connection Established"
     let buffer = ""
     upstreamSocket.on("data", (chunk: Buffer) => {
+      debug("proxyConnectViaUpstream: received data chunk from upstream (%d bytes): %s", chunk.length, chunk.toString().substring(0, 200))
       buffer += chunk.toString()
       if (buffer.includes("\r\n\r\n")) {
         const statusLine = buffer.split("\r\n")[0]
+        debug("proxyConnectViaUpstream: upstream response status = %s", statusLine)
+
+        // After receiving 200, any remaining data in this or subsequent chunks
+        // beyond the headers is actually TLS data from the target that the
+        // upstream proxy prematurely forwarded — save and replay to client.
+        const headerEnd = buffer.indexOf("\r\n\r\n") + 4
+        const leftover = headerEnd < buffer.length ? buffer.slice(headerEnd) : ""
+
         if (statusLine && statusLine.startsWith("HTTP/1.1 200")) {
+          // Remove HTTP header parser BEFORE setting up pipes,
+          // otherwise removeAllListeners would kill the pipe's data handler.
+          upstreamSocket.removeAllListeners("data")
+
           // Forward success to client
           clientSocket.write(
             "HTTP/1.1 200 Connection Established\r\n" +
               "Proxy-agent: straightforward\r\n" +
               "\r\n"
           )
-          // Bidirectional pipe
+          // Forward TLS ClientHello (head) consumed during CONNECT, then pipe
+          upstreamSocket.write(head)
+          debug("proxyConnectViaUpstream: establishing bidirectional pipe")
           upstreamSocket.pipe(clientSocket).on("error", (e: Error) => {
             debug("upstreamSocket.pipe(clientSocket) has error: " + e.message)
           })
           clientSocket.pipe(upstreamSocket).on("error", (e: Error) => {
             debug("clientSocket.pipe(upstreamSocket) has error: " + e.message)
           })
+          // If there's leftover TLS data after headers, forward to client
+          if (leftover) {
+            debug("proxyConnectViaUpstream: forwarding leftover TLS data to client (%d bytes)", leftover.length)
+            clientSocket.write(leftover)
+          }
         } else {
           // Upstream rejected the CONNECT
           debug("upstream CONNECT rejected: %s", statusLine)
           clientSocket.end(buffer)
+          upstreamSocket.removeAllListeners("data")
         }
-        upstreamSocket.removeAllListeners("data")
       }
+    })
+
+    upstreamSocket.on("connect", () => {
+      debug("proxyConnectViaUpstream: upstream socket connect event fired")
     })
 
     upstreamSocket.on("error", (err) => {

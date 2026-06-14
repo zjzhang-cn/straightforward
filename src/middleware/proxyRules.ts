@@ -138,7 +138,11 @@ export const proxyRules = (
 
     for (const rule of rules) {
       if (matchRule(hostname, rule, isConnectType, ruleSets)) {
-        debug(`proxyRules: matched "${rule.match}" → host=${hostname} type=${isConnectType ? "connect" : "http"}`)
+        const upstreamStr = rule.upstream
+          ? `upstream=${rule.upstream.host}:${rule.upstream.port}`
+          : "upstream=none(direct)"
+        const bindStr = rule.localAddress ?? def?.localAddress ?? "OS default"
+        debug(`proxyRules: matched "${rule.match}" → host=%s type=%s ${upstreamStr} bind=%s`, hostname, isConnectType ? "connect" : "http", bindStr)
 
         ctx.req.locals.upstream = rule.upstream
         ctx.req.locals.localAddress = rule.localAddress ?? def?.localAddress ?? "0.0.0.0"

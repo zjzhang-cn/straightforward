@@ -98,8 +98,8 @@ const argv = yargs
 
 if (argv.debug) {
   process.env.DEBUG = process.env.DEBUG
-    ? process.env.DEBUG + ",straightforward"
-    : "straightforward"
+    ? process.env.DEBUG + ",straightforward*"
+    : "straightforward*"
 }
 
 const { Straightforward, middleware } = require("./dist/index.js")

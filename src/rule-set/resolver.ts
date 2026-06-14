@@ -107,9 +107,34 @@ function loadTxtFile(filePath: string): DomainTrie {
   const trie = new DomainTrie()
   let count = 0
   for (const line of text.split("\n")) {
-    const domain = line.trim()
-    if (domain && !domain.startsWith("#")) {
-      trie.insert(domain)
+    const raw = line.trim()
+    if (!raw || raw.startsWith("#")) continue
+
+    // Parse v2ray rule-set prefix types:
+    //   domain:google.com  → suffix match (same as no prefix)
+    //   full:google.com    → exact match only
+    //   keyword:google     → not supported, skip
+    //   regexp:.*\.com     → not supported, skip
+    //   (no prefix)        → suffix match (default)
+    let mode: "domain" | "full" = "domain"
+    let domain = raw
+    if (raw.startsWith("domain:")) {
+      mode = "domain"
+      domain = raw.slice("domain:".length)
+    } else if (raw.startsWith("full:")) {
+      mode = "full"
+      domain = raw.slice("full:".length)
+    } else if (raw.startsWith("keyword:") || raw.startsWith("regexp:")) {
+      // skip unsupported types
+      continue
+    }
+
+    if (domain) {
+      if (mode === "full") {
+        trie.insertFull(domain)
+      } else {
+        trie.insert(domain)
+      }
       count++
     }
   }
