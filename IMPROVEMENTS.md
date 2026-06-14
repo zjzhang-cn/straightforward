@@ -168,6 +168,51 @@ remove(mw: Middleware<T>): void {
 
 压力测试中出现 `MaxListenersExceededWarning`，可在 `_proxyRequest` 中为 socket timeout 设置合理上限。
 
+#### 3.5 CONNECT 隧道空闲超时
+
+**文件**: [src/Straightforward.ts](src/Straightforward.ts)
+
+```ts
+serverSocket.setTimeout(300_000, () => serverSocket.destroy())
+clientSocket.setTimeout(300_000, () => clientSocket.destroy())
+```
+
+**理由**: 客户端网络断开但没有发送 FIN 时，服务端 socket 会永远挂着，造成资源泄漏。设置空闲超时自动回收。
+
+#### 3.6 细粒度超时控制
+
+当前只有一个 `requestTimeout`（60s）。生产环境建议拆分为：
+
+```ts
+export interface StraightforwardOptions {
+  connectTimeout: number   // TCP 连接建立超时，默认 10s
+  readTimeout: number      // 读取响应数据超时，默认 30s
+  writeTimeout: number     // 写入请求数据超时，默认 30s
+}
+```
+
+**理由**: 单一超时不够精细，一个慢请求可能挂住整个连接池。不同阶段的超时应该独立可控。
+
+#### 3.7 响应体大小限制
+
+在 `_onResponse` 的 pipe 链中加一个 Transform stream，可配置最大响应体大小，超限则截断并记录警告。
+
+```ts
+export interface StraightforwardOptions {
+  maxResponseSize?: number  // 响应体最大字节数，默认无限制
+}
+```
+
+**理由**: 防止恶意大文件下载耗尽内存。复杂度 ~30 行。
+
+#### 3.8 Debug 模式打印 SNI
+
+CONNECT 隧道建立时，客户端发送的第一个 TLS ClientHello 包含 SNI（Server Name Indication）。可在 debug 模式下解析 `head` buffer 的 SNI 字段并打印。
+
+**文件**: [src/Straightforward.ts](src/Straightforward.ts) `_proxyConnect` / `_proxyConnectViaUpstream`
+
+**理由**: 方便排查"这个 CONNECT 实际连到了哪个域名"，纯调试增强，零性能影响。复杂度 ~20 行。
+
 ---
 
 ## 功能增强方向
@@ -216,6 +261,43 @@ sf.gracefulClose({ timeout: 10_000 }) // 10 秒超时后强制关闭
 
 **复杂度**: ~30 行。
 
+### 功能十：SOCKS5 上游代理
+
+```ts
+sf.onConnect.use(middleware.proxyRules({
+  rules: [
+    {
+      match: "geosite:gfw",
+      upstream: { protocol: "socks5", host: "127.0.0.1", port: 1080 },
+    },
+  ],
+}))
+```
+
+**复杂度**: ~80 行。在 `_proxyConnectViaUpstream` 中检测 upstream 类型，SOCKS5 握手（版本协商 + 请求 + 地址解析），然后正常 pipe 数据流。
+
+**理由**: Shadowsocks、Trojan、Clash 等工具提供 SOCKS5 接口，不支持则无法级联。
+
+### 功能十一：健康检查端点
+
+```ts
+const sf = new Straightforward({ healthCheck: true })
+// GET /healthz → 200 { "status": "ok", "uptime": 12345, "connections": 42 }
+```
+
+**复杂度**: ~20 行。在 `_onRequest` 中检测路径，匹配 `/healthz` 则直接返回 JSON 状态响应。
+
+**理由**: 部署到负载均衡器后面时需要健康检查端点判断实例是否存活。
+
+### 功能十二：`close()` 优雅关闭
+
+```ts
+sf.close({ graceful: true, timeout: 10_000 })
+// 停止接受新连接 → 等待现有连接完成 → 超时后强制关闭
+```
+
+**复杂度**: ~30 行。与功能九（集群零停机重启）互补：功能九针对集群 worker 退出，此功能针对单实例 graceful shutdown。
+
 ---
 
 ## 功能优先级矩阵
@@ -233,6 +315,9 @@ sf.gracefulClose({ timeout: 10_000 }) // 10 秒超时后强制关闭
 | 连接数限制 | ~50 行 | 中 | 待实现 |
 | 结构化日志 | ~30 行 | 低 | 待实现 |
 | 优雅关闭 | ~30 行 | 低 | 待实现 |
+| SOCKS5 上游代理 | ~80 行 | 中 | 待实现 |
+| 健康检查端点 | ~20 行 | 低 | 待实现 |
+| close() 优雅关闭 | ~30 行 | 中 | 待实现 |
 
 ---
 
