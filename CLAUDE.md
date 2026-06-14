@@ -111,6 +111,12 @@ straightforward --rules-dir ./rules/ --rules-download-dat
 # Download both .txt and .dat
 straightforward --rules-dir ./rules/ --rules-download --rules-download-dat
 
+# Inspect geosite.dat contents
+straightforward --rules-dir ./rules/ --show-tags                  # List all 1503 tags
+straightforward --rules-dir ./rules/ --show-tags gfw              # Filter tags by keyword
+straightforward --rules-dir ./rules/ --show-domains gfw           # List all domains in a tag
+straightforward --rules-dir ./rules/ --show-domains apple-cn      # Shows [full] and [domain] entries
+
 # Download specific tags
 straightforward --rules-dir ./rules/ --rules-download gfw,apple-cn,google-cn
 

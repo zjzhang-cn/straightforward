@@ -73,6 +73,12 @@
 - [x] **removeAllListeners 时序修复**: 移到 pipe() 之前，避免删掉 pipe 的 data 监听器 — commit `5fa7cc1`
 - [x] **Bug 文档** (`docs/bugs/upstream-connect-fix.md`): 三个 bug 的根因分析和修复方案 — commit `5fa7cc1`
 
+### CLI 工具增强 ✅
+
+- [x] **`--show-tags [filter]`**: 列出 geosite.dat 中所有标签（1503 个），按域名数量排序，支持关键词过滤 — commit `1da16c3`
+- [x] **`--show-domains <tag>`**: 列出指定标签下的所有域名，显示匹配类型 `[full]`/`[domain]` — commit `cf225a3`
+- [x] **DomainTrie.list()**: 新增方法遍历 trie 中所有域名规则，支持 full/domain 类型区分 — commit `cf225a3`
+
 ---
 
 ## 待改进
