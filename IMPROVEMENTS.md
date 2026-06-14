@@ -293,6 +293,15 @@ const sf = new Straightforward({ healthCheck: true })
 
 **理由**: 部署到负载均衡器后面时需要健康检查端点判断实例是否存活。
 
+### 功能十二：`close()` 优雅关闭
+
+```ts
+sf.close({ graceful: true, timeout: 10_000 })
+// 停止接受新连接 → 等待现有连接完成 → 超时后强制关闭
+```
+
+**复杂度**: ~30 行。与功能九（集群零停机重启）互补：功能九针对集群 worker 退出，此功能针对单实例 graceful shutdown。
+
 ### 功能十三：SEA 内置 geosite.dat 规则集
 
 > 计划文档：[~/.claude/plans/snug-inventing-kay.md](~/.claude/plans/snug-inventing-kay.md)
