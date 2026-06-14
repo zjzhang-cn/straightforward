@@ -1,6 +1,6 @@
 # Straightforward 改进计划
 
-> 最后更新：2026-06-13
+> 最后更新：2026-06-14
 
 ## 已完成
 
@@ -21,7 +21,7 @@
 
 - [x] 完整测试套件 (32 tests, 2 skipped) — commit `e8c14e9`
 - [x] 压力测试：60s / 64 并发 / 43 RPS / 零内存泄漏（~3% 失败率，因 httpbin.org 限流）
-- [x] 当前测试总数：**66 tests passed, 2 skipped**（含 DomainTrie 13 + Resolver 12 + proxyRules 16 + ACL 18 + basics 5 + auth 1 + echo 1 + comprehensive 12）
+- [x] 当前测试总数：**75 tests passed, 2 skipped**（含 geosite.dat 9 + DomainTrie 13 + Resolver 12 + proxyRules 16 + ACL 18 + basics 5 + auth 1 + echo 1 + comprehensive 12）
 
 ### 统一配置文件 (proxyRules) ✅
 
@@ -56,6 +56,22 @@
 - [x] **CLAUDE.md 更新**: rule-set 模块文档 — commit `9defb86`
 - [x] **自动下载** (`src/rule-set/downloader.ts`): 从 GitHub Release 自动下载最新规则文件，零依赖 — commit `38755ee`
 - [x] **CLI `--rules-download` / `--rules-download-force`** — commit `38755ee`
+
+### geosite.dat 二进制格式支持 ✅
+
+- [x] **零依赖 protobuf 解码器** (`src/rule-set/geosite-dat.ts`): 手写 varint/string/message 解析，支持 v2ray GeoSiteList 格式 — commit `05d7d02`
+- [x] **Domain 类型映射**: Full(3) → 精确匹配，Domain(2) → 后缀匹配，Plain/Regex → 跳过 — commit `05d7d02`
+- [x] **标签小写化**: `.dat` 中大写标签转为小写，与 v2ray 生态一致 — commit `05d7d02`
+- [x] **resolver 集成**: 同时扫描 `.txt` 和 `.dat` 文件，`.txt` 标签优先级高于 `.dat` — commit `05d7d02`
+- [x] **CLI `--rules-download-dat`**: 下载 geosite.dat 到规则目录 — commit `05d7d02`
+- [x] **单元测试** (9 tests): 合成 dat 编码/解码、标签大小写、Full/Domain 匹配、真实文件验证 — commit `05d7d02`
+
+### upstream CONNECT 隧道修复 ✅
+
+- [x] **v2ray 规则文件 `full:` 前缀解析**: 修复 `full:dl.google.com` 字面匹配失败 — commit `5fa7cc1`
+- [x] **head 缓冲区转发**: `_proxyConnectViaUpstream` 收到 200 后将 TLS ClientHello 写入上游 — commit `5fa7cc1`
+- [x] **removeAllListeners 时序修复**: 移到 pipe() 之前，避免删掉 pipe 的 data 监听器 — commit `5fa7cc1`
+- [x] **Bug 文档** (`docs/bugs/upstream-connect-fix.md`): 三个 bug 的根因分析和修复方案 — commit `5fa7cc1`
 
 ---
 
