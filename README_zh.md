@@ -650,38 +650,54 @@ straightforward/
 ├── src/
 │   ├── Straightforward.ts        # 核心代理类（HTTP/CONNECT/WebSocket）
 │   ├── MiddlewareDispatcher.ts    # 中间件调度器
+│   ├── dns-resolver.ts           # DNS lookup 工厂（按 DNS 服务器缓存 Resolver）
 │   ├── index.ts                   # 顶层导出
 │   ├── middleware/
-│   │   ├── auth.ts               # 认证中间件
-│   │   ├── echo.ts               # 回显中间件
-│   │   ├── proxyRules.ts         # 统一路由中间件
-│   │   └── acl.ts                # IP 访问控制中间件
+│   │   ├── auth.ts               # 认证中间件（静态/动态）
+│   │   ├── echo.ts               # 回显中间件（Mock 响应）
+│   │   ├── proxyRules.ts         # 统一路由中间件（匹配 → upstream + localAddress + dns）
+│   │   ├── acl.ts                # IP 访问控制中间件（白名单/黑名单/CIDR）
+│   │   ├── headers.ts            # 请求/响应头改写中间件（变量插值）
+│   │   ├── connectionLimit.ts    # 连接数限制中间件（按 IP 计数）
+│   │   └── index.ts              # 中间件模块导出
 │   └── rule-set/
-│       ├── domain-trie.ts        # 域名后缀 trie（O(域名长度) 匹配）
-│       ├── resolver.ts           # 规则集加载器（.txt + .dat）
-│       ├── geosite-dat.ts        # 零依赖 protobuf 解码器
+│       ├── domain-trie.ts        # 域名后缀 trie（O(域名长度) 匹配，支持 full/suffix）
+│       ├── resolver.ts           # 规则集加载器（.txt + .dat，标签优先级）
+│       ├── geosite-dat.ts        # 零依赖 protobuf 解码器（varint/string/message）
 │       ├── downloader.ts         # GitHub Release 自动下载器
 │       └── index.ts              # 模块导出
 ├── test/
-│   ├── basics.test.ts            # 基础功能测试
-│   ├── auth.test.ts              # 认证测试
-│   ├── echo.test.ts              # 回显测试
-│   ├── proxyRules.test.ts        # 路由规则测试
-│   ├── acl.test.ts               # ACL 测试
-│   ├── comprehensive.test.ts     # 综合测试
+│   ├── basics.test.ts            # 基础功能测试 (5)
+│   ├── auth.test.ts              # 认证测试 (1)
+│   ├── echo.test.ts              # 回显测试 (1)
+│   ├── proxyRules.test.ts        # 路由规则测试 (16)
+│   ├── acl.test.ts               # ACL 测试 (18)
+│   ├── headers.test.ts           # Header 改写测试 (13)
+│   ├── connection-limit.test.ts  # 连接数限制测试 (13)
+│   ├── dns-resolver.test.ts      # DNS 解析测试 (12)
+│   ├── timeout.test.ts           # 超时控制测试 (11)
+│   ├── comprehensive.test.ts     # 综合测试 (12)
+│   ├── stress.ts                 # 压力测试 (60s, 64 并发)
+│   ├── utils.ts                  # 测试工具
 │   └── rule-set/
-│       ├── domain-trie.test.ts   # DomainTrie 测试
-│       ├── resolver.test.ts      # Resolver 测试
-│       └── geosite-dat.test.ts   # geosite.dat 解析测试
+│       ├── domain-trie.test.ts   # DomainTrie 测试 (13)
+│       ├── resolver.test.ts      # Resolver 测试 (12)
+│       └── geosite-dat.test.ts   # geosite.dat 解析测试 (9)
 ├── rules/                        # 规则文件目录
 │   ├── geosite.dat               # v2ray 二进制规则文件（1503 标签）
 │   ├── gfw.txt                   # GFW 域名列表
 │   ├── china-list.txt            # 中国域名列表
 │   ├── apple-cn.txt              # Apple 中国 CDN
 │   └── google-cn.txt             # Google 中国服务
+├── docs/                         # 文档
+│   ├── bugs/                     # Bug 分析文档
+│   ├── completed/                # 已完成功能设计文档
+│   ├── cli-reference.md          # CLI 参考
+│   ├── config-reference.md       # 配置参考
+│   └── IP-ACL-DESIGN.md          # IP ACL 设计文档
 ├── cli.js                        # CLI 入口
-├── docs/bugs/                    # Bug 文档
-└── IMPROVEMENTS.md               # 改进计划与设计文档
+├── README_zh.md                  # 中文 README（本文件）
+└── IMPROVEMENTS.md               # 改进计划
 ```
 
 ### 请求流程
@@ -790,11 +806,15 @@ codesign --sign - dist/straightforward
 | `geosite-dat.test.ts` | 9 | geosite.dat 解析测试 |
 | `proxyRules.test.ts` | 16 | 路由规则中间件测试 |
 | `acl.test.ts` | 18 | IP ACL 测试 |
+| `headers.test.ts` | 13 | Header 改写测试 |
+| `connection-limit.test.ts` | 13 | 连接数限制测试 |
+| `dns-resolver.test.ts` | 12 | DNS 解析测试 |
+| `timeout.test.ts` | 11 | 超时控制测试 |
 | `basics.test.ts` | 5 | 基础功能测试 |
 | `auth.test.ts` | 1 | 认证测试 |
 | `echo.test.ts` | 1 | 回显测试 |
 | `comprehensive.test.ts` | 12 | 综合测试 |
-| **总计** | **87 passed, 2 skipped** | |
+| **总计** | **136 passed, 2 skipped** | |
 
 ### 运行测试
 
