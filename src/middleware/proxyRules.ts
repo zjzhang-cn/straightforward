@@ -11,6 +11,8 @@ const debug = Debug("straightforward:middleware")
 export interface UpstreamProxy {
   host: string
   port: number
+  /** Protocol type. "http" (default) or "socks5". */
+  protocol?: string
   auth?: { user: string; pass: string }
 }
 

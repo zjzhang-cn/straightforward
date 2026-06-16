@@ -10,6 +10,7 @@ import { auth } from "./middleware/auth"
 import { echo } from "./middleware/echo"
 
 import { createLookupFunction } from "./dns-resolver"
+import { socks5Connect } from "./socks5"
 
 import os from "os"
 const numCPUs = os.cpus().length
@@ -35,7 +36,7 @@ export type Request = http.IncomingMessage & RequestAdditions
 export interface RequestLocals {
   isConnect: boolean
   urlParts: { host: string; port: number; path: string }
-  upstream?: { host: string; port: number; auth?: { user: string; pass: string } }
+  upstream?: { host: string; port: number; protocol?: string; auth?: { user: string; pass: string } }
   localAddress?: string
   /** DNS server from proxy rule. When undefined, OS default resolution is used. */
   dns?: string
@@ -282,10 +283,15 @@ export class Straightforward extends EventEmitter {
   private _proxyRequestViaUpstream(
     req: Request,
     res: Response,
-    upstream: { host: string; port: number; auth?: { user: string; pass: string } },
+    upstream: { host: string; port: number; protocol?: string; auth?: { user: string; pass: string } },
     localAddr: string | undefined,
     headers: Record<string, string | string[] | undefined>
   ) {
+    // SOCKS5 upstream: connect to proxy, SOCKS5 handshake to target, then send HTTP
+    if (upstream.protocol === "socks5") {
+      return this._proxyRequestViaSocks5(req, res, upstream, localAddr, headers)
+    }
+
     // Connect to the upstream proxy then issue the request through it.
     // Use an agent keyed per-upstream so sockets are reused.
     const agentKey = `${upstream.host}:${upstream.port}`
@@ -509,9 +515,13 @@ export class Straightforward extends EventEmitter {
     req: Request,
     clientSocket: internal.Duplex,
     head: Buffer,
-    upstream: { host: string; port: number; auth?: { user: string; pass: string } },
+    upstream: { host: string; port: number; protocol?: string; auth?: { user: string; pass: string } },
     localAddr: string | undefined
   ) {
+    // SOCKS5 upstream: connect to proxy, SOCKS5 handshake to target, then pipe
+    if (upstream.protocol === "socks5") {
+      return this._proxyConnectViaSocks5(req, clientSocket, head, upstream, localAddr)
+    }
     const dnsServer = req.locals.dns ?? this.#globalDns
     const lookup = dnsServer ? createLookupFunction(dnsServer) : undefined
 
@@ -632,6 +642,252 @@ export class Straightforward extends EventEmitter {
     clientSocket.on("destroyed", () => {
       debug("clientSocket - destroyed: \t %s %s", req.method, req.url)
       upstreamSocket.destroy()
+    })
+  }
+
+  /** Proxy CONNECT through a SOCKS5 upstream proxy */
+  private _proxyConnectViaSocks5(
+    req: Request,
+    clientSocket: internal.Duplex,
+    head: Buffer,
+    upstream: { host: string; port: number; protocol?: string; auth?: { user: string; pass: string } },
+    localAddr: string | undefined
+  ) {
+    const dnsServer = req.locals.dns ?? this.#globalDns
+    const lookup = dnsServer ? createLookupFunction(dnsServer) : undefined
+
+    const connectOpts: net.NetConnectOpts = {
+      host: upstream.host,
+      port: upstream.port,
+    }
+    if (localAddr && localAddr !== "0.0.0.0") {
+      connectOpts.localAddress = localAddr
+    }
+    if (lookup) {
+      connectOpts.lookup = lookup
+    }
+
+    debug("proxyConnectViaSocks5: connecting to SOCKS5 proxy %s:%s (target=%s:%s, bind=%s, dns=%s)", upstream.host, upstream.port, req.locals.urlParts.host, req.locals.urlParts.port, localAddr || "OS default", dnsServer || "OS default")
+
+    const connectTimer = setTimeout(() => {
+      debug("proxyConnectViaSocks5: connect timeout (%dms)", this.#connectTimeout)
+      socksSocket.destroy(new Error("Connect timeout"))
+    }, this.#connectTimeout)
+
+    const socksSocket = net.connect(connectOpts, () => {
+      clearTimeout(connectTimer)
+      ;(socksSocket as net.Socket).setNoDelay(true)
+      ;(clientSocket as net.Socket).setNoDelay(true)
+
+      socks5Connect({
+        socket: socksSocket as net.Socket,
+        target: { host: req.locals.urlParts.host, port: req.locals.urlParts.port },
+        auth: upstream.auth,
+        timeout: this.#connectTimeout,
+      })
+        .then(() => {
+          debug("proxyConnectViaSocks5: SOCKS5 handshake success, establishing pipe")
+
+          clientSocket.write(
+            "HTTP/1.1 200 Connection Established\r\n" +
+              "Proxy-agent: straightforward\r\n" +
+              "\r\n"
+          )
+
+          socksSocket.write(head)
+
+          ;(socksSocket as net.Socket).setTimeout(this.#readTimeout, () => {
+            debug("proxyConnectViaSocks5: read timeout (%dms)", this.#readTimeout)
+            socksSocket.destroy()
+          })
+
+          socksSocket.pipe(clientSocket).on("error", (e: Error) => {
+            debug("socksSocket.pipe(clientSocket) has error: " + e.message)
+          })
+          clientSocket.pipe(socksSocket).on("error", (e: Error) => {
+            debug("clientSocket.pipe(socksSocket) has error: " + e.message)
+          })
+        })
+        .catch((err) => {
+          debug("proxyConnectViaSocks5: SOCKS5 handshake failed: %s", err.message)
+          if (clientSocket.writable && !clientSocket.destroyed) {
+            clientSocket.end(
+              "HTTP/1.1 502 Bad Gateway\r\n" +
+                "Content-Type: text/plain\r\n" +
+                "\r\n" +
+                "SOCKS5 upstream connection failed: " +
+                (err as Error).message
+            )
+          }
+          clientSocket.destroy()
+        })
+    })
+
+    socksSocket.on("error", (err) => {
+      clearTimeout(connectTimer)
+      debug("socksSocket error", err)
+      if (clientSocket.writable && !clientSocket.destroyed) {
+        clientSocket.end(
+          "HTTP/1.1 502 Bad Gateway\r\n" +
+            "Content-Type: text/plain\r\n" +
+            "\r\n" +
+            "Upstream connection failed: " +
+            (err as Error).message
+        )
+      }
+      clientSocket.destroy()
+    })
+
+    clientSocket.on("destroyed", () => {
+      debug("clientSocket - destroyed: \t %s %s", req.method, req.url)
+      socksSocket.destroy()
+    })
+  }
+
+  /** Proxy HTTP request through a SOCKS5 upstream proxy */
+  private _proxyRequestViaSocks5(
+    req: Request,
+    res: Response,
+    upstream: { host: string; port: number; protocol?: string; auth?: { user: string; pass: string } },
+    localAddr: string | undefined,
+    headers: Record<string, string | string[] | undefined>
+  ) {
+    const dnsServer = req.locals.dns ?? this.#globalDns
+    const lookup = dnsServer ? createLookupFunction(dnsServer) : undefined
+
+    const connectOpts: net.NetConnectOpts = {
+      host: upstream.host,
+      port: upstream.port,
+    }
+    if (localAddr && localAddr !== "0.0.0.0") {
+      connectOpts.localAddress = localAddr
+    }
+    if (lookup) {
+      connectOpts.lookup = lookup
+    }
+
+    debug("proxyRequestViaSocks5: connecting to SOCKS5 proxy %s:%s (target=%s:%s:%s, bind=%s, dns=%s)", upstream.host, upstream.port, req.method, req.locals.urlParts.host, req.locals.urlParts.port, localAddr || "OS default", dnsServer || "OS default")
+
+    const connectTimer = setTimeout(() => {
+      debug("proxyRequestViaSocks5: connect timeout (%dms)", this.#connectTimeout)
+      socksSocket.destroy(new Error("Connect timeout"))
+    }, this.#connectTimeout)
+
+    const socksSocket = net.connect(connectOpts, () => {
+      clearTimeout(connectTimer)
+
+      socks5Connect({
+        socket: socksSocket as net.Socket,
+        target: { host: req.locals.urlParts.host, port: req.locals.urlParts.port },
+        auth: upstream.auth,
+        timeout: this.#connectTimeout,
+      })
+        .then(() => {
+          debug("proxyRequestViaSocks5: SOCKS5 handshake success, sending HTTP request")
+
+          // Forward the HTTP request through the SOCKS5 tunnel
+          const reqLine = `${req.method} ${req.url} HTTP/${req.httpVersion}\r\n`
+          let headerStr = reqLine
+          for (const [key, value] of Object.entries(headers)) {
+            if (value !== undefined) {
+              headerStr += `${key}: ${Array.isArray(value) ? value.join(", ") : value}\r\n`
+            }
+          }
+          headerStr += "\r\n"
+
+          socksSocket.write(headerStr)
+
+          // Pipe request body if present
+          req.pipe(socksSocket)
+
+          // Collect response from tunnel and forward to client
+          let responseBuffer = ""
+          let headersParsed = false
+
+          socksSocket.setTimeout(this.#readTimeout, () => {
+            debug("proxyRequestViaSocks5: read timeout (%dms)", this.#readTimeout)
+            socksSocket.destroy()
+          })
+
+          socksSocket.on("data", (chunk: Buffer) => {
+            if (!headersParsed) {
+              responseBuffer += chunk.toString()
+              const headerEnd = responseBuffer.indexOf("\r\n\r\n")
+              if (headerEnd !== -1) {
+                headersParsed = true
+
+                // Parse status line
+                const statusLine = responseBuffer.split("\r\n")[0]
+                const statusMatch = statusLine.match(/HTTP\/\d\.\d (\d+)/)
+                const statusCode = statusMatch ? parseInt(statusMatch[1]) : 200
+
+                // Parse response headers
+                const headerLines = responseBuffer.substring(0, headerEnd).split("\r\n").slice(1)
+                const responseHeaders: Record<string, string | string[]> = {}
+                for (const line of headerLines) {
+                  const colonIdx = line.indexOf(":")
+                  if (colonIdx > 0) {
+                    const key = line.substring(0, colonIdx).trim().toLowerCase()
+                    const value = line.substring(colonIdx + 1).trim()
+                    responseHeaders[key] = value
+                  }
+                }
+
+                // Remove hop-by-hop headers
+                for (const key of Object.keys(responseHeaders)) {
+                  if (Straightforward.#HOP_BY_HOP.has(key.toLowerCase())) {
+                    delete responseHeaders[key]
+                  }
+                }
+
+                res.writeHead(statusCode, responseHeaders)
+
+                // Forward any remaining data after headers
+                const bodyStart = headerEnd + 4
+                if (bodyStart < responseBuffer.length) {
+                  res.write(responseBuffer.substring(bodyStart))
+                }
+
+                // Forward subsequent chunks directly
+                socksSocket.removeListener("data", onData)
+                socksSocket.on("data", (chunk: Buffer) => {
+                  if (!res.writableEnded) {
+                    res.write(chunk)
+                  }
+                })
+              }
+            }
+          })
+          const onData = () => {}
+
+          socksSocket.on("end", () => {
+            if (!res.writableEnded) {
+              res.end()
+            }
+          })
+
+          req.on("destroyed", () => {
+            socksSocket.destroy()
+          })
+        })
+        .catch((err) => {
+          debug("proxyRequestViaSocks5: SOCKS5 handshake failed: %s", err.message)
+          if (!res.headersSent) {
+            res.writeHead(502)
+          }
+          res.end("SOCKS5 upstream connection failed: " + err.message)
+        })
+    })
+
+    socksSocket.on("error", (err) => {
+      clearTimeout(connectTimer)
+      debug("socksSocket error", err)
+      if (!res.headersSent) {
+        res.writeHead(502)
+      }
+      if (!res.writableEnded) {
+        res.end("Upstream connection failed: " + err.message)
+      }
     })
   }
 
