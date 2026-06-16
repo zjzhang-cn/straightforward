@@ -1,6 +1,6 @@
 # DNS over HTTPS（DoH）支持
 
-> 状态：✅ 已完成 | commit `待提交`
+> 状态：✅ 已完成 | commit `4988e0f`
 
 ## 概述
 
