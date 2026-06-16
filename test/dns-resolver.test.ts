@@ -2,7 +2,7 @@ import test from "ava"
 import { createLookupFunction } from "../src/dns-resolver"
 import { Straightforward } from "../src"
 import { proxyRules } from "../src/middleware/proxyRules"
-
+import * as net from "net"
 // ============================================================
 // createLookupFunction tests
 // ============================================================
@@ -178,4 +178,72 @@ test("Straightforward: opts.dns is available", (t) => {
 test("Straightforward: no dns by default", (t) => {
   const sf = new Straightforward()
   t.is(sf.opts.dns, undefined)
+})
+
+// ============================================================
+// DNS over HTTPS (DoH) tests
+// ============================================================
+
+test("DoH: createLookupFunction with DoH URL returns a function", (t) => {
+  const lookup = createLookupFunction("https://doh.pub/dns-query")
+  t.is(typeof lookup, "function")
+})
+
+test("DoH: resolve via doh.pub (ipv4.google.com)", async (t) => {
+  const lookup = createLookupFunction("https://doh.pub/dns-query")
+  const result = await new Promise<{ address: string; family: number }>((resolve, reject) => {
+    lookup("ipv4.google.com", { family: 4, all: false }, (err, address, family) => {
+      if (err) reject(err)
+      else resolve({ address, family })
+    })
+  })
+  t.truthy(result.address)
+  t.true(net.isIP(result.address) > 0)
+  t.is(result.family, 4)
+})
+
+test("DoH: resolve via cloudflare (example.com)", async (t) => {
+  const lookup = createLookupFunction("https://cloudflare-dns.com/dns-query")
+  const result = await new Promise<{ address: string; family: number }>((resolve, reject) => {
+    lookup("example.com", { family: 4, all: false }, (err, address, family) => {
+      if (err) reject(err)
+      else resolve({ address, family })
+    })
+  })
+  t.truthy(result.address)
+  t.true(net.isIP(result.address) > 0)
+})
+
+test("DoH: NXDOMAIN returns error in callback", async (t) => {
+  const lookup = createLookupFunction("https://doh.pub/dns-query")
+  try {
+    await new Promise((resolve, reject) => {
+      lookup("does-not-exist-hopefully.example.invalid", { family: 4, all: false }, (err) => {
+        if (err) reject(err)
+        else resolve(true)
+      })
+    })
+    t.fail("should have thrown ENOTFOUND")
+  } catch (err: any) {
+    t.truthy(err)
+    t.true(err.message.includes("ENOTFOUND") || err.message.includes("not found"))
+  }
+})
+
+test("DoH: createLookupFunction with doh URL and proxyRules propagation", async (t) => {
+  const config = {
+    rules: [
+      { match: "*", dns: "https://doh.pub/dns-query" },
+    ],
+  }
+  const mw = proxyRules(config)
+
+  const ctx: any = {
+    req: {
+      locals: { urlParts: { host: "example.com" } },
+    },
+  }
+
+  await mw(ctx, async () => {})
+  t.is(ctx.req.locals.dns, "https://doh.pub/dns-query")
 })
