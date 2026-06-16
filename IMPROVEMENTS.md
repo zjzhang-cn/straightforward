@@ -320,12 +320,69 @@ sf.close({ graceful: true, timeout: 10_000 })
 
 **状态**: ✅ 已完成 — `91c2298`
 
+### 功能十四：geoip 规则匹配
+
+类似 `geosite:` 但对 IP 地址。解析 `geoip.dat`（v2ray-rules-dat 提供的 protobuf 格式，~2MB），复用现有 protobuf 解码器的 wire format 逻辑。
+
 ```ts
-sf.close({ graceful: true, timeout: 10_000 })
-// 停止接受新连接 → 等待现有连接完成 → 超时后强制关闭
+rules: [
+  { match: "geoip:cn", upstream: null, localAddress: "192.168.3.78" },
+  { match: "geoip:us", upstream: { host: "us-proxy", port: 8080 } },
+]
 ```
 
-**复杂度**: ~30 行。与功能九（集群零停机重启）互补：功能九针对集群 worker 退出，此功能针对单实例 graceful shutdown。
+**复杂度**: ~100 行。GeoIP CIDR 列表加载 + proxyRules `geoip:` 前缀支持。配合 geosite 实现完整分流。
+
+### 功能十五：上游代理负载均衡
+
+在 proxyRules 中支持多个 upstream 节点，支持 Round-Robin / 随机分发。
+
+```ts
+rules: [
+  { match: "*", upstream: {
+    hosts: [
+      { host: "proxy1", port: 8080, weight: 5 },
+      { host: "proxy2", port: 8080, weight: 3 },
+    ],
+    strategy: "round-robin", // | "random"
+  }}
+]
+```
+
+**复杂度**: ~40 行。复用现有 upstream agent 缓存，新增负载均衡策略选择。
+
+### 功能十六：请求速率限制 (Rate Limiting)
+
+区别于连接数限制（控制并发连接数），速率限制控制每秒请求数（RPS）。令牌桶算法。
+
+```ts
+sf.onRequest.use(middleware.rateLimit({ maxRPS: 100, burstSize: 20 }))
+```
+
+**复杂度**: ~60 行。令牌桶算法实现，支持 burst。
+
+### 功能十七：请求体大小限制
+
+防止客户端发送超大请求体耗尽内存。在读取请求体时截断。
+
+```ts
+sf.onRequest.use(middleware.maxBodySize({ maxBytes: 10 * 1024 * 1024 }))
+```
+
+**复杂度**: ~20 行。与 IMPROVEMENTS.md 3.7 响应体限制互补。
+
+### 功能十八：自动上游健康检查
+
+定时探测上游代理的可用性，故障自动标记并从负载均衡池移除。
+
+```ts
+sf.onRequest.use(middleware.healthCheck({
+  interval: 30_000,
+  timeout: 5_000,
+}))
+```
+
+**复杂度**: ~50 行。与负载均衡（功能十五）配合使用。
 
 ---
 
@@ -342,12 +399,16 @@ sf.close({ graceful: true, timeout: 10_000 })
 | geosite.dat 支持 | ~200 行 | 高 | ✅ 已完成 |
 | Header 改写 | ~60 行 | 中 | ✅ 已完成 |
 | 连接数限制 | ~60 行 | 中 | ✅ 已完成 |
-| 结构化日志 | ~30 行 | 低 | 待实现 |
-| 优雅关闭 | ~30 行 | 低 | 待实现 |
+| SEA 内置 geosite.dat | ~30 行 | 高 | ✅ 已完成 |
 | SOCKS5 上游代理 | ~80 行 | 中 | 待实现 |
+| geoip 规则匹配 | ~100 行 | 高 | 待实现 |
+| 上游负载均衡 | ~40 行 | 高 | 待实现 |
+| 速率限制 (RPS) | ~60 行 | 中 | 待实现 |
+| 请求体大小限制 | ~20 行 | 中 | 待实现 |
+| 上游健康检查 | ~50 行 | 中 | 待实现 |
+| 结构化日志 | ~30 行 | 低 | 待实现 |
 | 健康检查端点 | ~20 行 | 低 | 待实现 |
 | close() 优雅关闭 | ~30 行 | 中 | 待实现 |
-| SEA 内置 geosite.dat | ~30 行 | 高 | ✅ 已完成 |
 
 ---
 
