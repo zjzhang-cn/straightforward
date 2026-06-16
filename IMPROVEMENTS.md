@@ -278,9 +278,11 @@ sf.onConnect.use(middleware.proxyRules({
 }))
 ```
 
-**复杂度**: ~80 行。在 `_proxyConnectViaUpstream` 中检测 upstream 类型，SOCKS5 握手（版本协商 + 请求 + 地址解析），然后正常 pipe 数据流。
+**复杂度**: ~300 行（socks5 握手 120 行 + Straightforward 集成 180 行）。SOCKS5 握手（版本协商 + 认证 + 请求 + 地址编码），然后双向 pipe 数据流。支持无认证和用户名/密码认证。
 
 **理由**: Shadowsocks、Trojan、Clash 等工具提供 SOCKS5 接口，不支持则无法级联。
+
+**状态**: ✅ 已完成 — `6f6766c`
 
 ### 功能十一：健康检查端点
 
@@ -400,7 +402,7 @@ sf.onRequest.use(middleware.healthCheck({
 | Header 改写 | ~60 行 | 中 | ✅ 已完成 |
 | 连接数限制 | ~60 行 | 中 | ✅ 已完成 |
 | SEA 内置 geosite.dat | ~30 行 | 高 | ✅ 已完成 |
-| SOCKS5 上游代理 | ~80 行 | 中 | 待实现 |
+| SOCKS5 上游代理 | ~300 行 | 高 | ✅ 已完成 |
 | geoip 规则匹配 | ~100 行 | 高 | 待实现 |
 | 上游负载均衡 | ~40 行 | 高 | 待实现 |
 | 速率限制 (RPS) | ~60 行 | 中 | 待实现 |
