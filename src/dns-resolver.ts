@@ -30,13 +30,16 @@ const insertionOrder: string[] = []
 function getResolver(dnsServer: string): dnsPromises.Resolver {
   let resolver = resolverCache.get(dnsServer)
   if (!resolver) {
+    // Create new resolver first, then evict if cache is full
+    resolver = new dnsPromises.Resolver()
+    resolver.setServers([dnsServer])
+
     if (insertionOrder.length >= MAX_CACHE_SIZE) {
       const oldest = insertionOrder.shift()!
       resolverCache.delete(oldest)
       debug(`DNS resolver cache evicted "${oldest}" (full)`)
     }
-    resolver = new dnsPromises.Resolver()
-    resolver.setServers([dnsServer])
+
     resolverCache.set(dnsServer, resolver)
     insertionOrder.push(dnsServer)
     debug(

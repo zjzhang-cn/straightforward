@@ -57,8 +57,11 @@ export const connectionLimit = (
     // Release slot when the request/connection finishes
     ctx.req.on("close", () => {
       const c = connections.get(ip)
-      if (c === undefined) return
-      if (c <= 1) {
+      if (c === undefined || c <= 0) {
+        // Already released or never tracked
+        return
+      }
+      if (c === 1) {
         connections.delete(ip)
         debug("connectionLimit: %s → released (last)", ip)
       } else {

@@ -493,12 +493,9 @@ export class Straightforward extends EventEmitter {
       clearTimeout(connectTimer)
       debug("serverSocket error", err)
       if (clientSocket.writable && !clientSocket.destroyed) {
+        const safeMsg = (err as Error).message.replace(/[\r\n]/g, " ")
         clientSocket.end(
-          "HTTP/1.1 502 Bad Gateway\r\n" +
-            "Content-Type: text/plain\r\n" +
-            "\r\n" +
-            "Upstream connection failed: " +
-            (err as Error).message
+          `HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\nUpstream connection failed: ${safeMsg}`
         )
       }
       clientSocket.destroy()
@@ -628,12 +625,9 @@ export class Straightforward extends EventEmitter {
       clearTimeout(connectTimer)
       debug("upstreamSocket error", err)
       if (clientSocket.writable && !clientSocket.destroyed) {
+        const safeMsg = (err as Error).message.replace(/[\r\n]/g, " ")
         clientSocket.end(
-          "HTTP/1.1 502 Bad Gateway\r\n" +
-            "Content-Type: text/plain\r\n" +
-            "\r\n" +
-            "Upstream connection failed: " +
-            (err as Error).message
+          `HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\nUpstream connection failed: ${safeMsg}`
         )
       }
       clientSocket.destroy()
@@ -711,12 +705,9 @@ export class Straightforward extends EventEmitter {
         .catch((err) => {
           debug("proxyConnectViaSocks5: SOCKS5 handshake failed: %s", err.message)
           if (clientSocket.writable && !clientSocket.destroyed) {
+            const safeMsg = (err as Error).message.replace(/[\r\n]/g, " ")
             clientSocket.end(
-              "HTTP/1.1 502 Bad Gateway\r\n" +
-                "Content-Type: text/plain\r\n" +
-                "\r\n" +
-                "SOCKS5 upstream connection failed: " +
-                (err as Error).message
+              `HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\nSOCKS5 upstream connection failed: ${safeMsg}`
             )
           }
           clientSocket.destroy()
@@ -727,12 +718,9 @@ export class Straightforward extends EventEmitter {
       clearTimeout(connectTimer)
       debug("socksSocket error", err)
       if (clientSocket.writable && !clientSocket.destroyed) {
+        const safeMsg = (err as Error).message.replace(/[\r\n]/g, " ")
         clientSocket.end(
-          "HTTP/1.1 502 Bad Gateway\r\n" +
-            "Content-Type: text/plain\r\n" +
-            "\r\n" +
-            "Upstream connection failed: " +
-            (err as Error).message
+          `HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\n\r\nUpstream connection failed: ${safeMsg}`
         )
       }
       clientSocket.destroy()
@@ -803,13 +791,14 @@ export class Straightforward extends EventEmitter {
           // Collect response from tunnel and forward to client
           let responseBuffer = ""
           let headersParsed = false
+          let pendingData: Buffer[] = []
 
           socksSocket.setTimeout(this.#readTimeout, () => {
             debug("proxyRequestViaSocks5: read timeout (%dms)", this.#readTimeout)
             socksSocket.destroy()
           })
 
-          socksSocket.on("data", (chunk: Buffer) => {
+          const handleData = (chunk: Buffer) => {
             if (!headersParsed) {
               responseBuffer += chunk.toString()
               const headerEnd = responseBuffer.indexOf("\r\n\r\n")
@@ -847,18 +836,13 @@ export class Straightforward extends EventEmitter {
                 if (bodyStart < responseBuffer.length) {
                   res.write(responseBuffer.substring(bodyStart))
                 }
-
-                // Forward subsequent chunks directly
-                socksSocket.removeListener("data", onData)
-                socksSocket.on("data", (chunk: Buffer) => {
-                  if (!res.writableEnded) {
-                    res.write(chunk)
-                  }
-                })
               }
+            } else if (!res.writableEnded) {
+              res.write(chunk)
             }
-          })
-          const onData = () => {}
+          }
+
+          socksSocket.on("data", handleData)
 
           socksSocket.on("end", () => {
             if (!res.writableEnded) {
@@ -875,7 +859,8 @@ export class Straightforward extends EventEmitter {
           if (!res.headersSent) {
             res.writeHead(502)
           }
-          res.end("SOCKS5 upstream connection failed: " + err.message)
+          const safeMsg = err.message.replace(/[\r\n]/g, " ")
+          res.end(`SOCKS5 upstream connection failed: ${safeMsg}`)
         })
     })
 
@@ -886,7 +871,8 @@ export class Straightforward extends EventEmitter {
         res.writeHead(502)
       }
       if (!res.writableEnded) {
-        res.end("Upstream connection failed: " + err.message)
+        const safeMsg = (err as Error).message.replace(/[\r\n]/g, " ")
+        res.end(`Upstream connection failed: ${safeMsg}`)
       }
     })
   }

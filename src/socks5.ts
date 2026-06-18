@@ -215,12 +215,18 @@ function encodeTarget(target: Socks5Target): Buffer {
   // Try IPv4
   const ipv4Match = target.host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
   if (ipv4Match) {
+    // Validate each octet is within 0-255 range
+    const octets = ipv4Match.slice(1, 5).map((s) => parseInt(s, 10))
+    if (octets.some((o) => o > 255)) {
+      // Invalid IP format, fall through to domain handling
+      return encodeAsDomain(target.host)
+    }
     const buf = Buffer.alloc(5) // ATYP(1) + addr(4)
     buf[0] = ATYP_IPV4
-    buf[1] = parseInt(ipv4Match[1])
-    buf[2] = parseInt(ipv4Match[2])
-    buf[3] = parseInt(ipv4Match[3])
-    buf[4] = parseInt(ipv4Match[4])
+    buf[1] = octets[0]
+    buf[2] = octets[1]
+    buf[3] = octets[2]
+    buf[4] = octets[3]
     return buf
   }
 
@@ -230,14 +236,22 @@ function encodeTarget(target: Socks5Target): Buffer {
     buf[0] = ATYP_IPV6
     const parts = target.host.split(":")
     for (let i = 0; i < 8 && i < parts.length; i++) {
-      const val = parseInt(parts[i] || "0", 16) || 0
+      // Validate hex conversion
+      const val = parseInt(parts[i] || "0", 16)
+      if (isNaN(val)) {
+        // Invalid hex segment, fall through to domain handling
+        return encodeAsDomain(target.host)
+      }
       buf.writeUInt16BE(val, 1 + i * 2)
     }
     return buf
   }
 
-  // Domain name
-  const hostBuf = Buffer.from(target.host, "utf-8")
+  return encodeAsDomain(target.host)
+}
+
+function encodeAsDomain(host: string): Buffer {
+  const hostBuf = Buffer.from(host, "utf-8")
   const buf = Buffer.alloc(2 + hostBuf.length) // ATYP(1) + len(1) + domain
   buf[0] = ATYP_DOMAIN
   buf[1] = hostBuf.length
