@@ -29,7 +29,7 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts --clean",
-    "build:sea": "esbuild cli.js --bundle --platform=node --target=node22 --format=cjs --outfile=dist/sea-bundle.js && node --experimental-sea-config=sea-config.json && codesign --sign - dist/straightforward",
+    "build:sea": "tsup src/index.ts --format cjs,esm --dts --clean && esbuild cli.js --bundle --platform=node --target=node22 --format=cjs --outfile=dist/sea-bundle.js && node --experimental-sea-config=sea-config.json && codesign --sign - dist/straightforward",
     "build:sea:bundle": "esbuild cli.js --bundle --platform=node --target=node22 --format=cjs --outfile=dist/sea-bundle.js",
     "watch": "npm run build -- --watch src",
     "test": "ava -v",

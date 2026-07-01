@@ -8,13 +8,15 @@ const debug = Debug("straightforward:middleware")
 // Types
 // ============================================================
 
-export interface UpstreamProxy {
+export interface UpstreamProxyBase {
   host: string
   port: number
   /** Protocol type. "http" (default) or "socks5". */
   protocol?: string
   auth?: { user: string; pass: string }
 }
+
+export type UpstreamProxy = string | UpstreamProxyBase
 
 export interface ProxyRule {
   /** Match pattern: glob ("*.google.com"), geosite:tag ("geosite:gfw"), or geoip:tag ("geoip:cn") */
@@ -23,7 +25,7 @@ export interface ProxyRule {
   type?: "http" | "connect"
   /** Source IP to bind outgoing connection to. "0.0.0.0" = OS default */
   localAddress?: string
-  /** Upstream proxy to route through. Omit = direct connect */
+  /** Upstream proxy to route through. Omit = direct connect. Supports URL string (e.g. "socks5://127.0.0.1:1080" or "http://user:pass@proxy:8080") or object */
   upstream?: UpstreamProxy
   /** DNS server for resolving target hostname (e.g. "8.8.8.8"). Omit = OS default */
   dns?: string
@@ -39,6 +41,40 @@ export interface ProxyRulesConfig {
   }
   /** Rule-set resolver for geosite: prefix matching. */
   ruleSets?: RuleSetResolver
+}
+
+// ============================================================
+// Upstream URL parsing
+// ============================================================
+
+function parseUpstream(upstream: UpstreamProxy): UpstreamProxyBase {
+  if (typeof upstream !== "string") {
+    return upstream
+  }
+  const url = new URL(upstream)
+  const protocol = url.protocol.replace(/:$/, "")
+  if (protocol !== "http" && protocol !== "socks5") {
+    throw new Error(`Unsupported upstream protocol: ${protocol}`)
+  }
+  const result: UpstreamProxyBase = {
+    host: url.hostname,
+    port: parseInt(url.port, 10),
+    protocol,
+  }
+  if (url.username || url.password) {
+    result.auth = {
+      user: decodeURIComponent(url.username),
+      pass: decodeURIComponent(url.password),
+    }
+  }
+  return result
+}
+
+function upstreamToString(upstream: UpstreamProxy): string {
+  if (typeof upstream === "string") {
+    return upstream
+  }
+  return `${upstream.protocol || "http"}://${upstream.host}:${upstream.port}`
 }
 
 export interface RequestAdditionsProxyRules {
@@ -144,14 +180,15 @@ export const proxyRules = (
 
     for (const rule of rules) {
       if (matchRule(hostname, rule, isConnectType, ruleSets)) {
-        const upstreamStr = rule.upstream
-          ? `upstream=${rule.upstream.host}:${rule.upstream.port}`
+        const upstreamObj = rule.upstream ? parseUpstream(rule.upstream) : undefined
+        const upstreamStr = upstreamObj
+          ? `upstream=${upstreamObj.protocol || "http"}://${upstreamObj.host}:${upstreamObj.port}`
           : "upstream=none(direct)"
         const bindStr = rule.localAddress ?? def?.localAddress ?? "OS default"
         const dnsStr = (rule.dns ?? def?.dns) ? `dns=${rule.dns ?? def?.dns}` : ""
         debug(`proxyRules: matched "${rule.match}" → host=%s type=%s ${upstreamStr} bind=%s %s`, hostname, isConnectType ? "connect" : "http", bindStr, dnsStr)
 
-        ctx.req.locals.upstream = rule.upstream
+        ctx.req.locals.upstream = upstreamObj
         ctx.req.locals.localAddress = rule.localAddress ?? def?.localAddress ?? "0.0.0.0"
         ctx.req.locals.dns = rule.dns ?? def?.dns
         return next()
@@ -160,7 +197,8 @@ export const proxyRules = (
 
     // Fallback to defaults
     debug(`proxyRules: no rule matched ${hostname}, using defaults`)
-    ctx.req.locals.upstream = def?.upstream
+    const defaultUpstream = def?.upstream ? parseUpstream(def.upstream) : undefined
+    ctx.req.locals.upstream = defaultUpstream
     ctx.req.locals.localAddress = def?.localAddress ?? "0.0.0.0"
     ctx.req.locals.dns = def?.dns
     return next()

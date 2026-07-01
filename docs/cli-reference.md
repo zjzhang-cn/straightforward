@@ -149,19 +149,17 @@ straightforward --rules-dir ./rules/ --show-domains apple-cn
 
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
-| `--upstream-host <string>` | — | 上游代理主机 |
-| `--upstream-port <number>` | `3128` | 上游代理端口 |
-| `--upstream-auth <user:pass>` | — | 上游代理认证 |
+| `--upstream <url>` | — | 上游代理地址 (URL 格式) |
 
 ```bash
 # 所有流量走上游代理
-straightforward --port 8081 --upstream-host proxy.example.com
+straightforward --port 8081 --upstream http://proxy.example.com:8080
 
-# 指定端口和认证
-straightforward --port 8081 \
-  --upstream-host proxy.example.com \
-  --upstream-port 8080 \
-  --upstream-auth "user:pass"
+# SOCKS5 上游代理
+straightforward --port 8081 --upstream socks5://127.0.0.1:1080
+
+# 带认证的上游代理
+straightforward --port 8081 --upstream http://user:pass@proxy.example.com:8080
 ```
 
 ---
@@ -220,7 +218,7 @@ cat > rules.local.json << 'EOF'
 {
   "rules": [
     { "match": "geosite:cn", "upstream": null },
-    { "match": "geosite:gfw", "upstream": { "host": "127.0.0.1", "port": 1082 } },
+    { "match": "geosite:gfw", "upstream": "http://127.0.0.1:1082" },
     { "match": "*", "upstream": null }
   ]
 }

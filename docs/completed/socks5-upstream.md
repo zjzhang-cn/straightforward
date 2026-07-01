@@ -19,13 +19,14 @@ SOCKS5（RFC 1928）是透明的 TCP 隧道协议：
 
 ### 协议扩展
 
-在 `upstream` 字段增加可选 `protocol` 属性：
+`upstream` 支持 URL 字符串格式或对象：
 
 ```ts
-// 当前
-upstream?: { host: string; port: number; auth?: { user: string; pass: string } }
+// URL 字符串（推荐）
+upstream?: "socks5://127.0.0.1:1080"
+upstream?: "http://user:pass@proxy.example.com:8080"
 
-// 扩展后
+// 对象格式（向后兼容）
 upstream?: {
   host: string; port: number;
   protocol?: "http" | "socks5";  // 默认 "http"
@@ -96,11 +97,7 @@ SOCKS5 CONNECT 请求中目标地址的编码：
 ```json
 {
   "rules": [
-    { "match": "geosite:gfw", "upstream": {
-      "protocol": "socks5",
-      "host": "127.0.0.1",
-      "port": 1080
-    }},
+    { "match": "geosite:gfw", "upstream": "socks5://127.0.0.1:1080" },
     { "match": "*", "upstream": null }
   ]
 }

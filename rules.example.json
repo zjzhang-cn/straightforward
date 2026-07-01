@@ -2,6 +2,105 @@
   "$comment": "straightforward 代理规则配置示例",
   "$comment2": "规则从上到下匹配，第一条匹配的规则生效",
   "$comment3": "localAddress: 出口源 IP，用于多网卡选择出口",
+  "$comment4": "upstream: 上游代理地址 (URL 格式，如 socks5://127.0.0.1:1080 或 http://user:pass@proxy:8080)，null = 直连，不写 = 走上游代理",
+
+  "rules": [
+    {
+      "match": "geosite:category-ads-all",
+      "localAddress": "0.0.0.0",
+      "upstream": "http://127.0.0.1:1084"
+    },
+    {
+      "match": "geosite:gfw",
+      "localAddress": "198.18.0.1",
+      "upstream": "http://127.0.0.1:1082"
+    },
+    {
+      "match": "geosite:telegram",
+      "localAddress": "198.18.0.1",
+      "upstream": "http://127.0.0.1:1083"
+    },
+    {
+      "match": "geosite:twitter",
+      "localAddress": "198.18.0.1",
+      "upstream": "http://127.0.0.1:1083"
+    },
+    {
+      "match": "geosite:youtube",
+      "localAddress": "198.18.0.1",
+      "upstream": "http://user1:pass1@proxy-us.example.com:8080"
+    },
+    {
+      "match": "geosite:netflix",
+      "localAddress": "198.18.0.1",
+      "upstream": "http://user1:pass1@proxy-us.example.com:8080"
+    },
+    {
+      "match": "*.google.com",
+      "localAddress": "198.18.0.1",
+      "upstream": "http://proxy-us.example.com:8080"
+    },
+    {
+      "match": "geosite:openai",
+      "localAddress": "198.18.0.1",
+      "upstream": "http://user2:pass2@proxy-jp.example.com:3128"
+    },
+    {
+      "match": "geosite:anthropic",
+      "localAddress": "198.18.0.1",
+      "upstream": "http://user2:pass2@proxy-jp.example.com:3128"
+    },
+    {
+      "match": "geosite:github",
+      "localAddress": "198.18.0.1",
+      "upstream": "http://user2:pass2@proxy-jp.example.com:3128"
+    },
+    {
+      "match": "geosite:cn",
+      "localAddress": "192.168.3.78",
+      "upstream": null
+    },
+    {
+      "match": "geosite:apple-cn",
+      "localAddress": "192.168.3.78",
+      "upstream": null
+    },
+    {
+      "match": "geosite:google-cn",
+      "localAddress": "192.168.3.78",
+      "upstream": null
+    },
+    {
+      "match": "*.cn",
+      "localAddress": "192.168.3.78",
+      "upstream": null
+    },
+    {
+      "match": "192.168.*",
+      "localAddress": "192.168.3.78",
+      "upstream": null
+    },
+    {
+      "match": "10.*",
+      "localAddress": "192.168.3.78",
+      "upstream": null
+    },
+    {
+      "match": "172.16.*",
+      "localAddress": "192.168.3.78",
+      "upstream": null
+    },
+    {
+      "match": "*",
+      "localAddress": "198.18.0.1",
+      "upstream": "http://127.0.0.1:1082"
+    }
+  ]
+}
+{
+  "$comment": "straightforward 代理规则配置示例",
+  "$comment2": "规则从上到下匹配，第一条匹配的规则生效",
+  "$comment3": "localAddress: 出口源 IP，用于多网卡选择出口",
   "$comment4": "upstream: 上游代理地址，null = 直连，不写 = 走上游代理",
 
   "rules": [

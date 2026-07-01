@@ -358,3 +358,75 @@ test("geosite: type filter still applies", async (t) => {
     t.is(connectCtx.req.locals.localAddress, "10.0.1.1", "CONNECT should match type=connect geosite rule")
   })
 })
+
+// ============================================================
+// upstream URL string parsing
+// ============================================================
+
+test("upstream string URL without auth is parsed to object", async (t) => {
+  const mw = middleware.proxyRules({
+    rules: [{ match: "*", upstream: "http://proxy.example.com:8080", localAddress: "10.0.0.1" }],
+  })
+
+  const ctx = createContext("example.com", false)
+  await mw(ctx, async () => {
+    t.is(ctx.req.locals.upstream?.host, "proxy.example.com")
+    t.is(ctx.req.locals.upstream?.port, 8080)
+    t.is(ctx.req.locals.upstream?.protocol, "http")
+    t.is(ctx.req.locals.upstream?.auth, undefined)
+  })
+})
+
+test("upstream string URL with auth is parsed to object", async (t) => {
+  const mw = middleware.proxyRules({
+    rules: [{ match: "*", upstream: "http://user:pass@proxy.example.com:8080", localAddress: "10.0.0.1" }],
+  })
+
+  const ctx = createContext("example.com", false)
+  await mw(ctx, async () => {
+    t.is(ctx.req.locals.upstream?.host, "proxy.example.com")
+    t.is(ctx.req.locals.upstream?.port, 8080)
+    t.is(ctx.req.locals.upstream?.protocol, "http")
+    t.deepEqual(ctx.req.locals.upstream?.auth, { user: "user", pass: "pass" })
+  })
+})
+
+test("upstream socks5 URL is parsed with protocol socks5", async (t) => {
+  const mw = middleware.proxyRules({
+    rules: [{ match: "*", upstream: "socks5://127.0.0.1:1080", localAddress: "10.0.0.1" }],
+  })
+
+  const ctx = createContext("example.com", false)
+  await mw(ctx, async () => {
+    t.is(ctx.req.locals.upstream?.host, "127.0.0.1")
+    t.is(ctx.req.locals.upstream?.port, 1080)
+    t.is(ctx.req.locals.upstream?.protocol, "socks5")
+  })
+})
+
+test("upstream object format still works (backward compat)", async (t) => {
+  const mw = middleware.proxyRules({
+    rules: [{ match: "*", upstream: { host: "proxy.example.com", port: 8080 }, localAddress: "10.0.0.1" }],
+  })
+
+  const ctx = createContext("example.com", false)
+  await mw(ctx, async () => {
+    t.is(ctx.req.locals.upstream?.host, "proxy.example.com")
+    t.is(ctx.req.locals.upstream?.port, 8080)
+    t.is(ctx.req.locals.upstream?.protocol, undefined)
+  })
+})
+
+test("default upstream string URL is parsed to object", async (t) => {
+  const mw = middleware.proxyRules({
+    rules: [{ match: "*.google.com", localAddress: "10.0.0.1" }],
+    default: { upstream: "http://default-proxy:3128" },
+  })
+
+  const ctx = createContext("example.com", false)
+  await mw(ctx, async () => {
+    t.is(ctx.req.locals.upstream?.host, "default-proxy")
+    t.is(ctx.req.locals.upstream?.port, 3128)
+    t.is(ctx.req.locals.upstream?.protocol, "http")
+  })
+})

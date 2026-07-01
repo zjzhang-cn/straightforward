@@ -89,19 +89,8 @@ const argv = yargs
     type: "string",
     group: "规则:",
   })
-  .option("upstream-host", {
-    describe: `上游代理主机 (配合 --rules 或单独使用)`,
-    type: "string",
-    group: "上游代理:",
-  })
-  .option("upstream-port", {
-    describe: `上游代理端口`,
-    type: "number",
-    default: 3128,
-    group: "上游代理:",
-  })
-  .option("upstream-auth", {
-    describe: `上游代理认证 (格式: user:pass)`,
+  .option("upstream", {
+    describe: `上游代理地址 (格式: http://host:port 或 socks5://host:port, 可选认证: http://user:pass@host:port)`,
     type: "string",
     group: "上游代理:",
   })
@@ -134,7 +123,7 @@ const argv = yargs
   .example([
     ["$0 --port 8081", "基本代理 (HTTP + HTTPS)"],
     ['$0 --port 8081 --auth "user:pass"', "带认证的代理"],
-    ["$0 --port 8081 --upstream-host proxy.example.com", "所有流量走上游代理"],
+    ["$0 --port 8081 --upstream http://proxy.example.com:8080", "所有流量走上游代理"],
     ["$0 --rules-dir ./rules/ --rules rules.json", "使用配置文件分流"],
     ["$0 --rules-dir ./rules/ --rules-download-dat", "下载 geosite.dat"],
     ["$0 --rules-dir ./rules/ --show-tags", "查看所有可用标签"],
@@ -351,22 +340,9 @@ async function cli() {
         console.log(`  Loaded ${rulesConfig.rules.length} proxy rule(s) from ${argv.rules}`)
       }
     }
-  } else if (argv.upstreamHost || argv.localAddress) {
+  } else if (argv.upstream || argv.localAddress) {
     // Simplified single-rule mode
-    const upstream = argv.upstreamHost
-      ? {
-          host: argv.upstreamHost,
-          port: argv.upstreamPort || 3128,
-          ...(argv.upstreamAuth
-            ? {
-                auth: {
-                  user: argv.upstreamAuth.split(":")[0],
-                  pass: argv.upstreamAuth.split(":")[1] || "",
-                },
-              }
-            : {}),
-        }
-      : undefined
+    const upstream = argv.upstream || undefined
 
     rulesConfig = {
       rules: [
@@ -383,7 +359,7 @@ async function cli() {
     sf.onConnect.use(middleware.proxyRules(rulesConfig))
     if (!argv.silent && !argv.quiet) {
       const parts = []
-      if (upstream) parts.push(`upstream=${upstream.host}:${upstream.port}`)
+      if (upstream) parts.push(`upstream=${upstream}`)
       if (argv.localAddress) parts.push(`localAddress=${argv.localAddress}`)
       console.log(`  Unified rule: ${parts.join(", ") || "direct"}`)
     }

@@ -19,7 +19,7 @@
 | 层级 | 使用方式 | 灵活性 |
 |------|---------|--------|
 | 零配置 | `straightforward` | 最小：所有流量直连 |
-| CLI 参数 | `--upstream-host --local-address` | 中：全局统一行为 |
+| CLI 参数 | `--upstream --local-address` | 中：全局统一行为 |
 | 配置文件 | `--rules proxyrules.json` | 高：按域名精细控制 |
 
 ### 零配置模式
@@ -34,13 +34,19 @@ straightforward
 
 ```bash
 # 所有流量走一个上游代理
-straightforward --upstream-host proxy.example.com --upstream-port 8080
+straightforward --upstream http://proxy.example.com:8080
+
+# SOCKS5 上游代理
+straightforward --upstream socks5://127.0.0.1:1080
+
+# 带认证的上游代理
+straightforward --upstream http://user:pass@proxy.example.com:8080
 
 # 所有流量绑定到一个出口 IP
 straightforward --local-address 192.168.3.78
 
 # 组合使用
-straightforward --upstream-host proxy.example.com --local-address 192.168.3.78
+straightforward --upstream http://proxy.example.com:8080 --local-address 192.168.3.78
 ```
 
 ### 配置文件模式
@@ -60,11 +66,7 @@ straightforward --rules rules.local.json --rules-dir ./rules/
       "match": "匹配模式",
       "type": "请求类型 (可选)",
       "localAddress": "出口源 IP (可选)",
-      "upstream": {
-        "host": "上游代理主机",
-        "port": 1234,
-        "auth": { "user": "用户名", "pass": "密码" }
-      }
+      "upstream": "http://user:pass@proxy.example.com:8080"
     }
   ],
   "default": {
@@ -100,8 +102,8 @@ straightforward --rules rules.local.json --rules-dir ./rules/
 | `"connect"` | 仅 CONNECT 请求 (onConnect) |
 
 ```json
-{ "match": "*.example.com", "type": "http", "upstream": { "host": "proxy-a", "port": 8080 } }
-{ "match": "*.example.com", "type": "connect", "upstream": { "host": "proxy-b", "port": 1082 } }
+{ "match": "*.example.com", "type": "http", "upstream": "http://proxy-a:8080" }
+{ "match": "*.example.com", "type": "connect", "upstream": "http://proxy-b:1082" }
 ```
 
 ### `localAddress` (可选)
@@ -128,6 +130,15 @@ straightforward --rules rules.local.json --rules-dir ./rules/
 | `host` | `string` | 上游代理主机 (必填) |
 | `port` | `number` | 上游代理端口 (必填) |
 | `auth` | `{ user, pass }` | 上游代理认证 (可选) |
+
+```json
+{
+  "match": "geosite:gfw",
+  "upstream": "http://proxy-user:proxy-pass@127.0.0.1:1082"
+}
+```
+
+或对象格式（向后兼容）：
 
 ```json
 {
@@ -228,7 +239,7 @@ straightforward --rules rules.local.json --rules-dir ./rules/
 straightforward --rules-dir ./rules/ --rules-download-dat
 
 # 在配置文件中引用
-{ "match": "geosite:gfw", "upstream": { "host": "127.0.0.1", "port": 1082 } }
+{ "match": "geosite:gfw", "upstream": "http://127.0.0.1:1082" }
 { "match": "geosite:cn", "upstream": null }
 ```
 
@@ -241,7 +252,7 @@ straightforward --rules-dir ./rules/ --rules-download-dat
 ```json
 {
   "rules": [
-    { "match": "geosite:gfw", "upstream": { "host": "127.0.0.1", "port": 1082 } },
+    { "match": "geosite:gfw", "upstream": "http://127.0.0.1:1082" },
     { "match": "geosite:cn", "upstream": null },
     { "match": "*", "upstream": null }
   ]
@@ -253,7 +264,7 @@ straightforward --rules-dir ./rules/ --rules-download-dat
 ```json
 {
   "rules": [
-    { "match": "geosite:gfw", "localAddress": "198.18.0.1", "upstream": { "host": "127.0.0.1", "port": 1082 } },
+    { "match": "geosite:gfw", "localAddress": "198.18.0.1", "upstream": "http://127.0.0.1:1082" },
     { "match": "geosite:cn", "localAddress": "192.168.3.78", "upstream": null },
     { "match": "*", "localAddress": "192.168.3.78", "upstream": null }
   ]
@@ -265,10 +276,10 @@ straightforward --rules-dir ./rules/ --rules-download-dat
 ```json
 {
   "rules": [
-    { "match": "geosite:gfw", "upstream": { "host": "127.0.0.1", "port": 1082 } },
-    { "match": "geosite:telegram", "upstream": { "host": "127.0.0.1", "port": 1083 } },
-    { "match": "geosite:youtube", "upstream": { "host": "proxy-us.example.com", "port": 8080 } },
-    { "match": "geosite:openai", "upstream": { "host": "proxy-jp.example.com", "port": 3128 } },
+    { "match": "geosite:gfw", "upstream": "http://127.0.0.1:1082" },
+    { "match": "geosite:telegram", "upstream": "http://127.0.0.1:1083" },
+    { "match": "geosite:youtube", "upstream": "http://proxy-us.example.com:8080" },
+    { "match": "geosite:openai", "upstream": "http://proxy-jp.example.com:3128" },
     { "match": "geosite:cn", "upstream": null },
     { "match": "*", "upstream": null }
   ]
@@ -282,19 +293,11 @@ straightforward --rules-dir ./rules/ --rules-download-dat
   "rules": [
     {
       "match": "geosite:gfw",
-      "upstream": {
-        "host": "proxy-us.example.com",
-        "port": 8080,
-        "auth": { "user": "user1", "pass": "pass1" }
-      }
+      "upstream": "http://user1:pass1@proxy-us.example.com:8080"
     },
     {
       "match": "geosite:openai",
-      "upstream": {
-        "host": "proxy-jp.example.com",
-        "port": 3128,
-        "auth": { "user": "user2", "pass": "pass2" }
-      }
+      "upstream": "http://user2:pass2@proxy-jp.example.com:3128"
     },
     { "match": "*", "upstream": null }
   ]
@@ -306,7 +309,7 @@ straightforward --rules-dir ./rules/ --rules-download-dat
 ```json
 {
   "rules": [
-    { "match": "geosite:category-ads-all", "upstream": { "host": "127.0.0.1", "port": 1084 } },
+    { "match": "geosite:category-ads-all", "upstream": "http://127.0.0.1:1084" },
     { "match": "*", "upstream": null }
   ]
 }
@@ -317,8 +320,8 @@ straightforward --rules-dir ./rules/ --rules-download-dat
 ```json
 {
   "rules": [
-    { "match": "*.example.com", "type": "http", "upstream": { "host": "proxy-a", "port": 8080 } },
-    { "match": "*.example.com", "type": "connect", "upstream": { "host": "proxy-b", "port": 1082 } },
+    { "match": "*.example.com", "type": "http", "upstream": "http://proxy-a:8080" },
+    { "match": "*.example.com", "type": "connect", "upstream": "http://proxy-b:1082" },
     { "match": "*", "upstream": null }
   ]
 }
@@ -329,15 +332,15 @@ straightforward --rules-dir ./rules/ --rules-download-dat
 ```json
 {
   "rules": [
-    { "match": "geosite:category-ads-all", "localAddress": "0.0.0.0", "upstream": { "host": "127.0.0.1", "port": 1084 } },
-    { "match": "geosite:gfw", "localAddress": "198.18.0.1", "upstream": { "host": "127.0.0.1", "port": 1082 } },
-    { "match": "geosite:telegram", "localAddress": "198.18.0.1", "upstream": { "host": "127.0.0.1", "port": 1083 } },
-    { "match": "geosite:youtube", "localAddress": "198.18.0.1", "upstream": { "host": "proxy-us.example.com", "port": 8080, "auth": { "user": "u1", "pass": "p1" } } },
-    { "match": "geosite:openai", "localAddress": "198.18.0.1", "upstream": { "host": "proxy-jp.example.com", "port": 3128, "auth": { "user": "u2", "pass": "p2" } } },
+    { "match": "geosite:category-ads-all", "localAddress": "0.0.0.0", "upstream": "http://127.0.0.1:1084" },
+    { "match": "geosite:gfw", "localAddress": "198.18.0.1", "upstream": "http://127.0.0.1:1082" },
+    { "match": "geosite:telegram", "localAddress": "198.18.0.1", "upstream": "http://127.0.0.1:1083" },
+    { "match": "geosite:youtube", "localAddress": "198.18.0.1", "upstream": "http://u1:p1@proxy-us.example.com:8080" },
+    { "match": "geosite:openai", "localAddress": "198.18.0.1", "upstream": "http://u2:p2@proxy-jp.example.com:3128" },
     { "match": "geosite:cn", "localAddress": "192.168.3.78", "upstream": null },
     { "match": "*.cn", "localAddress": "192.168.3.78", "upstream": null },
     { "match": "192.168.*", "localAddress": "192.168.3.78", "upstream": null },
-    { "match": "*", "localAddress": "198.18.0.1", "upstream": { "host": "127.0.0.1", "port": 1082 } }
+    { "match": "*", "localAddress": "198.18.0.1", "upstream": "http://127.0.0.1:1082" }
   ],
   "default": {
     "localAddress": "192.168.3.78",

@@ -12,7 +12,7 @@
 
 - [x] **proxyRules 中间件** — commit `857fc5c`
 - [x] **核心路由感知** (`_proxyRequest` / `_proxyConnect`) — commit `857fc5c`
-- [x] **CLI 三层配置** (`--rules` / `--upstream-*` / 零配置) — commit `746e121`
+- [x] **CLI 三层配置** (`--rules` / `--upstream` / 零配置) — commit `746e121`
 - [x] **proxyRules 单元测试** (16 tests) — commit `a21601e`
 - [x] **全局 localAddress** (`Straightforward({ localAddress })`) — commit `09d9ea9`
 - [x] **CLI `--local-address` 透传** — commit `76b6757`
@@ -24,9 +24,10 @@ interface ProxyRule {
   match: string        // Glob 模式: "*.google.com", "geosite:gfw", "*"
   type?: "http" | "connect"  // 可选，仅对特定请求类型生效
   localAddress?: string       // 出口源 IP
-  upstream?: {                // 上游代理
+  upstream?: "http://proxy.example.com:8080" | {  // 上游代理 (URL 字符串或对象)
     host: string
     port: number
+    protocol?: "http" | "socks5"
     auth?: { user: string; pass: string }
   } | null                    // null = 直连
 }
@@ -37,7 +38,7 @@ interface ProxyRule {
 | 层级 | 使用方式 | 灵活性 |
 |------|---------|--------|
 | 零配置 | `straightforward` | 最小：直连，系统选出口 |
-| CLI 参数 | `--upstream-host --local-address` | 中：全局统一行为 |
+| CLI 参数 | `--upstream --local-address` | 中：全局统一行为 |
 | 配置文件 | `--rules proxyrules.json` | 高：按域名精细控制 |
 
 ## Glob → Regex 转换（零依赖，~12 行）
